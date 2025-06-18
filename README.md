@@ -96,3 +96,4 @@ The application is built with the following components:
 ## License
 
 MIT
+# rag-project-local-llm
