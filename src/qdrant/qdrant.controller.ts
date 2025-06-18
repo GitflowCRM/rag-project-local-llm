@@ -43,6 +43,20 @@ class SemanticSearchDto {
   top?: number;
 }
 
+class RagSearchDto {
+  @IsString()
+  @IsNotEmpty()
+  collection: string;
+
+  @IsString()
+  @IsNotEmpty()
+  query: string;
+
+  @IsOptional()
+  @IsNumber()
+  top?: number;
+}
+
 @ApiTags('Qdrant')
 @Controller('qdrant')
 export class QdrantController {
@@ -83,6 +97,21 @@ export class QdrantController {
       body.collection,
       body.query,
       body.top ?? 5,
+    );
+  }
+
+  @Post('rag-search')
+  @ApiOperation({ summary: 'Search and generate answer using RAG' })
+  @ApiBody({ type: RagSearchDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns generated answer with sources',
+  })
+  async ragSearch(@Body() body: RagSearchDto): Promise<any> {
+    return await this.qdrantService.ragSearch(
+      body.collection,
+      body.query,
+      body.top ?? 3,
     );
   }
 }

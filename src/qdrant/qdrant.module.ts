@@ -5,12 +5,14 @@ import { QdrantService } from './qdrant.service';
 import { QdrantController } from './qdrant.controller';
 import { Event } from '../events/entities/event.entity';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
+import { LlmModule } from '../llm/llm.module';
 
 @Module({
   imports: [
     HttpModule,
     TypeOrmModule.forFeature([Event]),
     EmbeddingsModule,
+    LlmModule,
   ],
   controllers: [QdrantController],
   providers: [QdrantService],

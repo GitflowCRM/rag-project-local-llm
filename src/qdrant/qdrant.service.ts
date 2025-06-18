@@ -6,6 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { Event } from '../events/entities/event.entity';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
+import { LlmService } from '../llm/llm.service';
 
 interface QdrantPoint {
   id: number;
@@ -38,6 +39,7 @@ export class QdrantService implements OnModuleInit {
     @InjectRepository(Event)
     private readonly eventRepo: Repository<Event>,
     private readonly embeddingsService: EmbeddingsService,
+    private readonly llmService: LlmService,
   ) {}
 
   async onModuleInit() {
@@ -309,6 +311,57 @@ export class QdrantService implements OnModuleInit {
     } catch (error) {
       this.logger.error(
         `Failed to perform semantic search: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      throw error;
+    }
+  }
+
+  async ragSearch(
+    collection: string,
+    query: string,
+    top = 3,
+  ): Promise<{
+    query: string;
+    answer: string;
+    sources: Array<{
+      id: number;
+      score: number;
+      payload: QdrantPoint['payload'];
+    }>;
+  }> {
+    try {
+      // 1. Get relevant documents through semantic search
+      const searchResults = await this.semanticSearch(collection, query, top);
+
+      // 2. Format context from search results
+      const context = searchResults.results
+        .map((result) => {
+          const data = result.payload.event_data;
+          return `Topic: ${data.topic}\nFact: ${data.fact}\nSource: ${data.source}\n`;
+        })
+        .join('\n');
+
+      // 3. Generate prompt for LLM
+      const prompt = `Based on the following historical facts, please answer the question. If the facts don't contain enough information to answer the question, say so.
+
+Context:
+${context}
+
+Question: ${query}
+
+Answer:`;
+
+      // 4. Get answer from LLM
+      const answer = await this.llmService.generateResponse(prompt);
+
+      return {
+        query,
+        answer,
+        sources: searchResults.results,
+      };
+    } catch (error) {
+      this.logger.error(
+        `RAG search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
       throw error;
     }
