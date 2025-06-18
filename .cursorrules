@@ -1,0 +1,92 @@
+Goal:
+Build a Retrieval-Augmented Generation (RAG) backend using NestJS, capable of answering natural language questions about user event data stored in PostgreSQL. Use LangChain for embeddings and retrieval logic, and ChromaDB (via Docker Compose) as the vector database.
+
+⸻
+
+Package manager: bun
+
+🏗 Stack:
+	•	NestJS (main application framework)
+	•	LangChain (Node.js/TS) via langchainjs
+	•	PGVector (Docker container)
+	•	PostgreSQL (event data source)
+	•	Embeddings: Open AI
+	•	LLM: gemma via local llm - shared curl at the bottom
+
+⸻
+
+📦 Docker Compose Setup:
+
+Include:
+	•	postgres
+	•	pgvector
+	•	Optional: pgadmin, llm-server (Gemma or other model)
+
+⸻
+
+✅ Milestones:
+	1.	Data Layer (NestJS)
+	•	Create a service to connect to PostgreSQL
+	•	Query recent user event data (JSON format)
+	•	Add metadata: userId, eventType, eventTimestamp
+	2.	Chunking
+	•	Use langchain/text_splitter (e.g., RecursiveCharacterTextSplitter)
+	•	Semantic chunking by userId + time window (e.g., hourly session)
+	•	Include metadata in each chunk
+	3.	Embedding Generation
+	•	Use langchain/embeddings module with HuggingFace or OpenAI
+	•	Generate vector embeddings for each chunk
+	4.	Vector Store (ChromaDB)
+	•	Containerized via Docker
+	•	Store embeddings using LangChain’s Chroma integration
+	•	Use metadata for filtering (e.g., search by userId)
+	5.	RAG Pipeline
+	•	Accept a query in REST or GraphQL (NestJS)
+	•	Embed query
+	•	Perform similarity search (top-k chunks from Chroma)
+	•	Construct final prompt with retrieved context + user query
+	•	Call LLM (Gemma, OpenAI, etc.)
+	•	Return generated answer
+	6.	API Endpoints
+	•	POST /ingest: Trigger ingestion from PG → chunks → embeddings → Chroma
+	•	POST /query: Accept question, return generated answer
+
+⸻
+
+🧪 Testing & Dev Notes:
+	•	Use class-transformer and class-validator for DTOs
+	•	Split the app into rag, embeddings, events, and llm modules
+	•	Mock LLM call for local testing
+	•	Optional: schedule cron sync from PG to vector DB
+
+⸻
+
+✨ Example Query Flow:
+
+POST /query
+{
+  "question": "How many users placed an order in the last 24 hours?",
+  "filters": { "eventType": "purchase" }
+}
+
+
+
+
+curl --location 'https://openai.gitflow.ai/api/v0/models'
+
+
+
+curl --location 'https://openai.gitflow.ai/api/v0/chat/completions' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "deepseek-coder-v2-lite-instruct-mlx",
+    "temperature": 0.2,
+    "stream": false,
+    "max_tokens": -1,
+    "messages": [
+        {
+            "role": "user",
+            "content": "You are a strict JSON classifier. Your job is to assign each product to exactly ONE matching collection from the list below. \n\n✅ Do:\n- Return ONLY valid JSON.\n- Include each product in **one and only one** collection.\n- Leave '\''products'\'' array empty if no product fits.\n\n🚫 Do NOT:\n- Duplicate collections.\n- Include explanation, comments, or markdown.\n- Output anything except the JSON structure below.\n\n---\n\nHere is the format. Fill it:\n\n{\n  \"collections\": [\n    {\n      \"id\": 191094358148,\n      \"title\": \"18K Caviar Gold\",\n      \"handle\": \"18k-gold\",\n      \"description\": \"Classic caviar jewelry styles in 18K gold.\",\n      \"products\": []\n    },\n    {\n      \"id\": 275869171844,\n      \"title\": \"18K Gold & Diamonds\",\n      \"handle\": \"discover-18k-gold-and-diamonds\",\n      \"description\": \"18K gold jewelry accented with diamonds.\",\n      \"products\": [\n        {\n          \"id\": 8184719507588,\n          \"title\": \"Rare Wonders The Drop 18K Gold Mother Of Pearl Evil Eye Pendant Necklace\",\n          \"product_type\": \"Necklace\",\n          \"vendor\": \"LAGOS\",\n          \"price\": \"2000.00\",\n          \"tags\": [\"category_node_:Necklaces\", \"material:Gold\", \"gemstone:Mother of Pearl\", \"product_detail_1:18K Gold\"],\n          \"images\": [\"https://cdn.shopify.com/s/files/1/0346/0264/7684/files/07-10246-WZML.JPG?v=1741075255\"]\n        }\n      ]\n    }\n  ]\n}"
+        }
+    ]
+}'
