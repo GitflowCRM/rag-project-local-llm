@@ -9,7 +9,7 @@ async function bootstrap() {
   // Enable validation
   app.useGlobalPipes(new ValidationPipe());
 
-  // Swagger configuration
+  // Swagger setup
   const config = new DocumentBuilder()
     .setTitle('RAG API')
     .setDescription(

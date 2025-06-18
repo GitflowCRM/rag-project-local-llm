@@ -1,35 +1,58 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { EventsModule } from './events/events.module';
 import { RagModule } from './rag/rag.module';
 import { EmbeddingsModule } from './embeddings/embeddings.module';
 import { LlmModule } from './llm/llm.module';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
+import { WithLengthColumnType } from 'typeorm/driver/types/ColumnTypes';
+import { QdrantModule } from './qdrant/qdrant.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: '.env',
-    }),
+    ConfigModule.forRoot({ isGlobal: true }),
     TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
+      useFactory: () => ({
         type: 'postgres',
-        host: configService.get('POSTGRES_HOST'),
-        port: configService.get('POSTGRES_PORT'),
-        username: configService.get('POSTGRES_USER'),
-        password: configService.get('POSTGRES_PASSWORD'),
-        database: configService.get('POSTGRES_DB'),
+        host: process.env.POSTGRES_HOST,
+        port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
+        username: process.env.POSTGRES_USER,
+        password: process.env.POSTGRES_PASSWORD,
+        database: process.env.POSTGRES_DB,
         autoLoadEntities: true,
-        synchronize: configService.get('NODE_ENV') === 'development',
+        synchronize: false,
+        logging: true,
       }),
-      inject: [ConfigService],
+      dataSourceFactory: async (options) => {
+        if (!options) {
+          throw new Error('DataSource options are required');
+        }
+        const dataSource = new DataSource(options);
+
+        // Push vector into length column type
+        dataSource.driver.supportedDataTypes.push(
+          'vector' as WithLengthColumnType,
+        );
+        dataSource.driver.withLengthColumnTypes.push(
+          'vector' as WithLengthColumnType,
+        );
+
+        // Initialize datasource
+        await dataSource.initialize();
+
+        return dataSource;
+      },
     }),
     EventsModule,
     RagModule,
     EmbeddingsModule,
     LlmModule,
+    QdrantModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}
