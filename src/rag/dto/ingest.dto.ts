@@ -1,22 +1,30 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, IsNumber } from 'class-validator';
+import { IsOptional, IsString, IsNumber, Min } from 'class-validator';
 
 export class IngestDto {
   @ApiProperty({
-    description: 'Optional time window in hours to ingest events from',
-    example: 24,
+    description: 'Time window in hours to filter events',
     required: false,
+    minimum: 1,
   })
   @IsOptional()
   @IsNumber()
+  @Min(1)
   timeWindowHours?: number;
 
   @ApiProperty({
-    description: 'Optional user ID to filter events for ingestion',
-    example: 'user123',
+    description: 'User ID to filter events',
     required: false,
   })
   @IsOptional()
   @IsString()
   userId?: string;
+
+  @ApiProperty({
+    description: 'Category to filter events',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  category?: string;
 }

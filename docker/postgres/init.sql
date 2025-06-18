@@ -1,14 +1,16 @@
 -- Enable pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Create events table
+-- Create events table with vector support
 CREATE TABLE IF NOT EXISTS events (
     id SERIAL PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,
     event_type VARCHAR(255) NOT NULL,
     event_data JSONB NOT NULL,
-    event_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    embedding vector(1536)
+    event_timestamp TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ingested_at TIMESTAMPTZ,
+    embedding vector(1536)  -- OpenAI embeddings are 1536 dimensions
 );
 
 -- Create index on user_id and event_timestamp for faster queries

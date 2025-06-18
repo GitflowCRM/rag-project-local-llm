@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { Event } from './entities/event.entity';
+import { ApiOperation, ApiResponse } from '@nestjs/swagger';
 
 @Controller('events')
 export class EventsController {
@@ -21,6 +22,31 @@ export class EventsController {
   @Get()
   findAll(): Promise<Event[]> {
     return this.eventsService.findAll();
+  }
+
+  @Get('ingestion-status')
+  @ApiOperation({ summary: 'Get ingestion status summary' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns summary of events ingestion status',
+    schema: {
+      type: 'object',
+      properties: {
+        totalEvents: { type: 'number', description: 'Total number of events' },
+        pendingIngestion: {
+          type: 'number',
+          description: 'Number of events pending ingestion',
+        },
+        lastIngestedAt: {
+          type: 'string',
+          format: 'date-time',
+          description: 'Timestamp of last ingestion, or null if none',
+        },
+      },
+    },
+  })
+  getIngestionStatus() {
+    return this.eventsService.getIngestionStatus();
   }
 
   @Get(':id')
@@ -44,7 +70,7 @@ export class EventsController {
     @Query('endTime') endTime: string,
     @Query('eventType') eventType?: string,
   ): Promise<Event[]> {
-    return this.eventsService.findEventsByTimeRange(
+    return this.eventsService.findByTimeRange(
       new Date(startTime),
       new Date(endTime),
       eventType,

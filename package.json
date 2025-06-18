@@ -17,7 +17,12 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "seed": "ts-node src/events/scripts/seed-events.ts",
+    "typeorm": "ts-node --transpile-only ./node_modules/typeorm/cli.js -d src/data-source.ts",
+    "migration:generate": "bun run typeorm migration:generate src/migrations/InitEventsTable",
+    "migration:run": "bun run typeorm migration:run",
+    "migration:revert": "bun run typeorm migration:revert"
   },
   "dependencies": {
     "@langchain/community": "^0.3.46",

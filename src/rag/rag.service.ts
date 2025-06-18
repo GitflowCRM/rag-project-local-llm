@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { EventsService } from '../events/events.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { LlmService } from '../llm/llm.service';
-import { Event } from '../events/entities/event.entity';
 
 @Injectable()
 export class RagService {
@@ -12,65 +11,82 @@ export class RagService {
     private readonly llmService: LlmService,
   ) {}
 
-  async processQuery(
-    question: string,
-    filters?: { eventType?: string },
-  ): Promise<string> {
-    // Generate embedding for the question
+  async query(question: string): Promise<{ answer: string }> {
+    // 1. Generate embedding for the question
     const questionEmbedding =
       await this.embeddingsService.generateEmbedding(question);
 
-    // Get relevant events based on filters
-    let events: Event[];
-    if (filters?.eventType) {
-      events = await this.eventsService.findByEventType(filters.eventType);
-    } else {
-      events = await this.eventsService.findAll();
-    }
+    // 2. Find similar events using vector similarity
+    const similarEvents = await this.eventsService.findSimilarEvents(
+      questionEmbedding,
+      3,
+    );
 
-    // Find most similar events using cosine similarity
-    const similarEvents = events
-      .filter((event) => event.embedding)
-      .map((event) => ({
-        event,
-        similarity: this.cosineSimilarity(questionEmbedding, event.embedding),
-      }))
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 5);
-
-    // Construct context from similar events
+    // 3. Build context from similar events
     const context = similarEvents
-      .map(({ event }) => {
+      .map((event) => {
+        const timestamp =
+          event.event_timestamp instanceof Date
+            ? event.event_timestamp.toISOString()
+            : String(event.event_timestamp);
         return `Event Type: ${event.event_type}
 User ID: ${event.user_id}
-Timestamp: ${event.event_timestamp.toISOString()}
+Timestamp: ${timestamp}
 Data: ${JSON.stringify(event.event_data)}`;
       })
       .join('\n\n');
 
-    // Construct prompt with context and question
-    const prompt = `Based on the following event data, please answer the question:
+    // 4. Generate answer with context
+    const prompt = `You are a question-answering system that ONLY answers questions based on the provided context. 
+
+Instructions:
+1. If the answer can be found in the context, provide it clearly and concisely.
+2. If the answer cannot be found in the context, respond EXACTLY with: "I cannot answer this question based on the available information in the knowledge base."
+3. NEVER make up information or use external knowledge.
+4. NEVER try to infer or guess information that isn't explicitly in the context.
 
 Context:
 ${context}
 
 Question: ${question}
 
-Please provide a clear and concise answer based only on the provided context.`;
+Answer:`;
 
-    // Generate response using LLM
-    return this.llmService.generateResponse(prompt);
+    const answer = await this.llmService.generateResponse(prompt);
+    return { answer };
   }
 
-  private cosineSimilarity(a: number[], b: number[]): number {
-    if (a.length !== b.length) {
-      throw new Error('Vectors must have the same length');
+  async ingest(): Promise<{ ingestedCount: number; events: any[] }> {
+    // 1. Get events that need ingestion
+    const events = await this.eventsService.findUningestedEvents();
+
+    if (events.length === 0) {
+      return { ingestedCount: 0, events: [] };
     }
 
-    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
-    const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
-    const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+    // 2. Generate embeddings for events
+    const eventsWithEmbeddings = await Promise.all(
+      events.map(async (event) => ({
+        id: event.id,
+        embedding: await this.embeddingsService.generateEmbedding(
+          JSON.stringify(event),
+        ),
+      })),
+    );
 
-    return dotProduct / (magnitudeA * magnitudeB);
+    // 3. Store embeddings
+    await this.embeddingsService.storeEvents(eventsWithEmbeddings);
+
+    // 4. Update ingested_at timestamp
+    await Promise.all(
+      events.map((event) =>
+        this.eventsService.updateIngestedAt(event.id, new Date()),
+      ),
+    );
+
+    return {
+      ingestedCount: eventsWithEmbeddings.length,
+      events: eventsWithEmbeddings,
+    };
   }
 }

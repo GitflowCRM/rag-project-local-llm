@@ -1,12 +1,6 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { RagService } from './rag.service';
-
-class QueryDto {
-  question: string;
-  filters?: {
-    eventType?: string;
-  };
-}
+import { QueryDto } from './dto/query.dto';
 
 @Controller('rag')
 export class RagController {
@@ -14,10 +8,12 @@ export class RagController {
 
   @Post('query')
   async query(@Body() queryDto: QueryDto): Promise<{ answer: string }> {
-    const answer = await this.ragService.processQuery(
-      queryDto.question,
-      queryDto.filters,
-    );
-    return { answer };
+    // Only use question for now, as filters are not implemented in the service
+    return this.ragService.query(queryDto.question);
+  }
+
+  @Post('ingest')
+  async ingest() {
+    return this.ragService.ingest();
   }
 }

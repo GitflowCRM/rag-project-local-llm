@@ -19,9 +19,16 @@ export class Event {
   @Column('jsonb')
   event_data: Record<string, any>;
 
-  @CreateDateColumn({ type: 'timestamp with time zone' })
+  @Column({ type: 'timestamp with time zone' })
   event_timestamp: Date;
 
-  @Column('float', { array: true, nullable: true })
-  embedding: number[];
+  @CreateDateColumn({ type: 'timestamp with time zone' })
+  created_at: Date;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  ingested_at: Date | null;
+
+  // @ts-expect-error: TypeORM does not support 'vector' type natively
+  @Column('vector', { nullable: true })
+  embedding: number[] | null;
 }
