@@ -6,16 +6,29 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "ES2021",
+    "esModuleInterop": true,
+    "target": "es2017",
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": true,
-    "forceConsistentCasingInFileNames": true,
+    "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false
+    "forceConsistentCasingInFileNames": false,
+    "noFallthroughCasesInSwitch": false,
+    "paths": {
+      "@app/shared": ["libs/shared/src"],
+      "@app/shared/*": ["libs/shared/src/*"],
+      "@app/shared-queue": ["libs/shared-queue/src"],
+      "@app/shared-queue/*": ["libs/shared-queue/src/*"],
+      "@app/shared-config": ["libs/shared-config/src"],
+      "@app/shared-config/*": ["libs/shared-config/src/*"],
+      "@app/elastic-search": ["libs/elastic-search/src"],
+      "@app/elastic-search/*": ["libs/elastic-search/src/*"],
+      "@utils": ["libs/utils/src"],
+      "@utils/*": ["libs/utils/src/*"]
+    }
   }
 }
