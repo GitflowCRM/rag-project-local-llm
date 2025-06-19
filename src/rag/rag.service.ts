@@ -74,9 +74,6 @@ Answer:`;
       })),
     );
 
-    // 3. Store embeddings
-    await this.embeddingsService.storeEvents(eventsWithEmbeddings);
-
     // 4. Update ingested_at timestamp
     await Promise.all(
       events.map((event) =>

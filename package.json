@@ -21,6 +21,7 @@
     "seed": "ts-node src/events/scripts/seed-events.ts",
     "typeorm": "ts-node --transpile-only ./node_modules/typeorm/cli.js -d src/data-source.ts",
     "migration:generate": "bun run typeorm migration:generate src/migrations/InitEventsTable",
+    "typeorm:schema:sync": "npx typeorm-ts-node-commonjs schema:sync -d src/data-source.ts",
     "migration:run": "bun run typeorm migration:run",
     "migration:revert": "bun run typeorm migration:revert"
   },

@@ -1,5 +1,11 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { AxiosError } from 'axios';
 import { catchError, firstValueFrom } from 'rxjs';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,7 +25,7 @@ interface QdrantPoint {
   };
 }
 
-interface QdrantSearchResult {
+export interface QdrantSearchResult {
   result: Array<{
     id: number;
     score: number;
@@ -32,20 +38,23 @@ export class QdrantService implements OnModuleInit {
   private readonly logger = new Logger(QdrantService.name);
   private readonly baseUrl = process.env.QDRANT_URL || 'http://localhost:6333';
   private readonly vectorSize = 1536; // OpenAI embedding size
-  private readonly defaultCollection = 'events';
+  private readonly eventCollection = 'events';
+  private readonly posthogEventsCollection = 'posthog_events';
 
   constructor(
     private readonly httpService: HttpService,
     @InjectRepository(Event)
     private readonly eventRepo: Repository<Event>,
     private readonly embeddingsService: EmbeddingsService,
+    @Inject(forwardRef(() => LlmService))
     private readonly llmService: LlmService,
   ) {}
 
   async onModuleInit() {
     try {
       await this.checkQdrantHealth();
-      await this.ensureCollectionExists(this.defaultCollection);
+      await this.ensureCollectionExists(this.eventCollection);
+      await this.ensureCollectionExists(this.posthogEventsCollection);
       this.logger.log('Qdrant service initialized successfully');
     } catch (error) {
       this.logger.error(
@@ -195,21 +204,15 @@ export class QdrantService implements OnModuleInit {
     collection: string,
     id: string,
     vector: number[],
-    payload: QdrantPoint['payload'],
+    payload: Record<string, any>,
   ): Promise<any> {
     const url = `${this.baseUrl}/collections/${collection}/points`;
     const body = {
       points: [
         {
-          id: parseInt(id, 10), // Qdrant expects integer IDs
+          id: id, // Use UUID string directly instead of converting to integer
           vector,
-          payload: {
-            ...payload,
-            event_timestamp:
-              typeof payload.event_timestamp === 'string'
-                ? payload.event_timestamp
-                : payload.event_timestamp.toISOString(),
-          },
+          payload,
         },
       ],
     };
@@ -363,6 +366,74 @@ Answer:`;
       this.logger.error(
         `RAG search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
+      throw error;
+    }
+  }
+
+  async getHealth() {
+    try {
+      const healthUrl = `${this.baseUrl}/healthz`;
+      const response = await firstValueFrom(
+        this.httpService.get(healthUrl).pipe(
+          catchError((error: AxiosError) => {
+            this.logger.error('Health check failed:', error);
+            throw error;
+          }),
+        ),
+      );
+      return { status: 'healthy', ...response.data };
+    } catch (error) {
+      this.logger.error('Health check failed:', error);
+      return { status: 'unhealthy', error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async getCollections() {
+    try {
+      const collectionsUrl = `${this.baseUrl}/collections`;
+      const response = await firstValueFrom(
+        this.httpService.get(collectionsUrl).pipe(
+          catchError((error: AxiosError) => {
+            this.logger.error('Failed to get collections:', error);
+            throw error;
+          }),
+        ),
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to get collections:', error);
+      throw error;
+    }
+  }
+
+  async getCollectionStats(collectionName: string) {
+    try {
+      const statsUrl = `${this.baseUrl}/collections/${collectionName}`;
+      const response = await firstValueFrom(
+        this.httpService.get(statsUrl).pipe(
+          catchError((error: AxiosError) => {
+            this.logger.error(`Failed to get stats for collection ${collectionName}:`, error);
+            throw error;
+          }),
+        ),
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Failed to get stats for collection ${collectionName}:`, error);
+      throw error;
+    }
+  }
+
+  async getCollectionCount(collectionName: string) {
+    try {
+      const info = await this.getCollectionStats(collectionName);
+      return {
+        collection: collectionName,
+        count: info.points_count,
+        vectors_count: info.vectors_count,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get count for collection ${collectionName}:`, error);
       throw error;
     }
   }

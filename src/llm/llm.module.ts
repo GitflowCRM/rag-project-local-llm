@@ -1,7 +1,12 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { LlmService } from './llm.service';
+import { LlmController } from './llm.controller';
+import { QdrantModule } from '../qdrant/qdrant.module';
+import { EmbeddingsModule } from '../embeddings/embeddings.module';
 
 @Module({
+  imports: [forwardRef(() => QdrantModule), EmbeddingsModule],
+  controllers: [LlmController],
   providers: [LlmService],
   exports: [LlmService],
 })

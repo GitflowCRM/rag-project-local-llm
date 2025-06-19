@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { QueueEventsService } from './queue-events.service';
 import { EventsSyncProcessor } from './events-sync.processor';
+import { PosthogEventsProcessor } from './posthog-events.processor';
 import { EventsModule } from '../events/events.module';
 import { QdrantModule } from '../qdrant/qdrant.module';
 import { QueueEventsController } from './queue-events.controller';
@@ -32,7 +33,7 @@ import { QUEUE_NAMES } from './const';
     EmbeddingsModule,
   ],
   controllers: [QueueEventsController],
-  providers: [QueueEventsService, EventsSyncProcessor],
+  providers: [QueueEventsService, EventsSyncProcessor, PosthogEventsProcessor],
   exports: [BullModule],
 })
 export class QueueModule {}

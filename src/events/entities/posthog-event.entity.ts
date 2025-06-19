@@ -52,4 +52,7 @@ export class PosthogEvent {
 
   @Column('text', { nullable: true })
   shopdomain: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  ingested_at: Date;
 }

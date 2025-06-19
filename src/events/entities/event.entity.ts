@@ -27,8 +27,4 @@ export class Event {
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   ingested_at: Date | null;
-
-  // @ts-expect-error: TypeORM does not support 'vector' type natively
-  @Column('vector', { nullable: true })
-  embedding: number[] | null;
 }

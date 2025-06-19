@@ -1,23 +1,10 @@
-import { Controller, Post, Body } from '@nestjs/common';
-import { QdrantService } from './qdrant.service';
+import { Controller, Post, Body, Get, Param } from '@nestjs/common';
+import { QdrantService, QdrantSearchResult } from './qdrant.service';
 import { ApiTags, ApiOperation, ApiBody, ApiResponse } from '@nestjs/swagger';
-import {
-  IsString,
-  IsNumber,
-  IsOptional,
-  IsArray,
-  IsNotEmpty,
-} from 'class-validator';
-
-class IngestDto {
-  @IsString()
-  @IsNotEmpty()
-  collection: string;
-}
+import { IsString, IsArray, IsNumber, IsOptional } from 'class-validator';
 
 class SearchDto {
   @IsString()
-  @IsNotEmpty()
   collection: string;
 
   @IsArray()
@@ -29,89 +16,79 @@ class SearchDto {
   top?: number;
 }
 
-class SemanticSearchDto {
+class IngestDto {
   @IsString()
-  @IsNotEmpty()
   collection: string;
 
   @IsString()
-  @IsNotEmpty()
-  query: string;
+  id: string;
 
-  @IsOptional()
-  @IsNumber()
-  top?: number;
+  @IsArray()
+  @IsNumber({}, { each: true })
+  vector: number[];
+
+  payload: Record<string, any>;
 }
 
-class RagSearchDto {
-  @IsString()
-  @IsNotEmpty()
-  collection: string;
-
-  @IsString()
-  @IsNotEmpty()
-  query: string;
-
-  @IsOptional()
-  @IsNumber()
-  top?: number;
-}
-
-@ApiTags('Qdrant')
+@ApiTags('Qdrant Vector Database')
 @Controller('qdrant')
 export class QdrantController {
   constructor(private readonly qdrantService: QdrantService) {}
 
+  @Get('health')
+  @ApiOperation({ summary: 'Check Qdrant health status' })
+  @ApiResponse({ status: 200, description: 'Qdrant is healthy' })
+  async getHealth(): Promise<any> {
+    return await this.qdrantService.getHealth();
+  }
+
+  @Get('collections')
+  @ApiOperation({ summary: 'List all collections' })
+  @ApiResponse({ status: 200, description: 'List of collections' })
+  async getCollections(): Promise<any> {
+    return await this.qdrantService.getCollections();
+  }
+
+  @Get('collections/:collectionName/stats')
+  @ApiOperation({ summary: 'Get collection statistics' })
+  @ApiResponse({ status: 200, description: 'Collection statistics' })
+  async getCollectionStats(
+    @Param('collectionName') collectionName: string,
+  ): Promise<any> {
+    return await this.qdrantService.getCollectionStats(collectionName);
+  }
+
+  @Get('collections/:collectionName/count')
+  @ApiOperation({ summary: 'Get total number of records in collection' })
+  @ApiResponse({ status: 200, description: 'Record count' })
+  async getCollectionCount(
+    @Param('collectionName') collectionName: string,
+  ): Promise<any> {
+    return await this.qdrantService.getCollectionCount(collectionName);
+  }
+
   @Post('ingest')
-  @ApiOperation({ summary: 'Ingest all un-ingested events to Qdrant' })
+  @ApiOperation({ summary: 'Ingest data into Qdrant collection' })
   @ApiBody({ type: IngestDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns number of ingested events',
-  })
-  async ingestAll(@Body() body: IngestDto): Promise<{ ingested: number }> {
-    return await this.qdrantService.ingestAllEventsToQdrant(body.collection);
+  @ApiResponse({ status: 201, description: 'Data ingested successfully' })
+  async ingest(@Body() body: IngestDto): Promise<any> {
+    return await this.qdrantService.upsert(
+      body.collection,
+      body.id,
+      body.vector,
+      body.payload,
+    );
   }
 
   @Post('search')
-  @ApiOperation({ summary: 'Search for similar vectors in Qdrant' })
+  @ApiOperation({ summary: 'Search vectors in collection' })
   @ApiBody({ type: SearchDto })
-  @ApiResponse({ status: 200, description: 'Returns search results' })
-  async search(@Body() body: SearchDto): Promise<any> {
+  @ApiResponse({ status: 200, description: 'Search results' })
+  async search(@Body() body: SearchDto): Promise<QdrantSearchResult> {
     return await this.qdrantService.search(
       body.collection,
       body.vector,
-      body.top ?? 5,
-    );
-  }
-
-  @Post('semantic-search')
-  @ApiOperation({ summary: 'Search for semantically similar content' })
-  @ApiBody({ type: SemanticSearchDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns semantically similar results',
-  })
-  async semanticSearch(@Body() body: SemanticSearchDto): Promise<any> {
-    return await this.qdrantService.semanticSearch(
-      body.collection,
-      body.query,
-      body.top ?? 5,
-    );
-  }
-
-  @Post('rag-search')
-  @ApiOperation({ summary: 'Search and generate answer using RAG' })
-  @ApiBody({ type: RagSearchDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns generated answer with sources',
-  })
-  async ragSearch(@Body() body: RagSearchDto): Promise<any> {
-    return await this.qdrantService.ragSearch(
-      body.collection,
-      body.query,
-      body.top ?? 3,
+      body.top,
     );
   }
 }

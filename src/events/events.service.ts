@@ -57,11 +57,6 @@ export class EventsService {
     });
   }
 
-  async updateEmbedding(id: number, embedding: number[]): Promise<Event> {
-    await this.eventRepository.update(id, { embedding });
-    return this.findOne(id);
-  }
-
   async updateIngestedAt(id: number, timestamp: Date): Promise<Event> {
     await this.eventRepository.update(id, { ingested_at: timestamp });
     return this.findOne(id);
@@ -131,4 +126,3 @@ export class EventsService {
     await this.eventRepository.update(id, { ingested_at: new Date() });
   }
 }
- 
