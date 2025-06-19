@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { QdrantService } from '../qdrant/qdrant.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
+import { LLM_MODELS } from '../queue/const';
 
 interface LLMResponse {
   choices: Array<{
@@ -35,6 +36,7 @@ interface PosthogEventPayload {
 interface QueryRequest {
   question: string;
   top_k?: number;
+  model_override?: string;
   filters?: {
     person_id?: string;
     vendor_id?: string;
@@ -61,6 +63,7 @@ interface QueryResponse {
   metadata: {
     total_sources: number;
     search_time_ms: number;
+    model_used?: string;
   };
 }
 
@@ -82,12 +85,17 @@ export class LlmService {
     this.maxTokens = this.configService.get<number>('LLM_MAX_TOKENS') || 4096;
   }
 
-  async generateResponse(prompt: string): Promise<string> {
+  async generateResponse(
+    prompt: string,
+    modelOverride?: string,
+  ): Promise<string> {
     try {
+      const modelToUse = modelOverride || this.model;
+
       const response = await axios.post<LLMResponse>(
         `${this.apiUrl}/chat/completions`,
         {
-          model: this.model,
+          model: modelToUse,
           temperature: this.temperature,
           stream: false,
           max_tokens: this.maxTokens,
@@ -138,9 +146,9 @@ export class LlmService {
     }
     // 3. Prepare context from search results
     const context = this.prepareContext(searchResults.result);
-    // 4. Generate LLM response
+    // 4. Generate LLM response with model selection based on query complexity
     const prompt = this.buildPrompt(request.question, context);
-    const answer = await this.generateResponse(prompt);
+    const answer = await this.generateResponse(prompt, LLM_MODELS.REASONING);
     // 5. Format sources for response
     const sources = searchResults.result.map((result) => {
       const payload = result.payload as unknown as PosthogEventPayload;
@@ -160,8 +168,71 @@ export class LlmService {
       metadata: {
         total_sources: sources.length,
         search_time_ms: Date.now() - startTime,
+        model_used: LLM_MODELS.REASONING,
       },
     };
+  }
+
+  private selectModelForQuery(
+    question: string,
+    context: string,
+  ): string | undefined {
+    // Use faster models for simple queries, more powerful models for complex analysis
+    const questionLower = question.toLowerCase();
+    const contextLength = context.length;
+
+    // Simple queries that can use faster models
+    const simpleQueryKeywords = [
+      'count',
+      'how many',
+      'total',
+      'number of',
+      'list',
+      'show',
+      'what is',
+      'basic',
+      'simple',
+      'summary',
+      'overview',
+    ];
+
+    // Complex queries that need more powerful models
+    const complexQueryKeywords = [
+      'analyze',
+      'compare',
+      'trend',
+      'pattern',
+      'insight',
+      'why',
+      'how',
+      'behavior',
+      'correlation',
+      'prediction',
+      'recommendation',
+      'strategy',
+    ];
+
+    const isSimpleQuery = simpleQueryKeywords.some((keyword) =>
+      questionLower.includes(keyword),
+    );
+
+    const isComplexQuery = complexQueryKeywords.some((keyword) =>
+      questionLower.includes(keyword),
+    );
+
+    const hasLargeContext = contextLength > 10000; // Large context needs more capable model
+
+    // Model selection logic
+    if (isSimpleQuery && !hasLargeContext) {
+      // Use fast model for simple queries
+      return 'microsoft/phi-4-reasoning-plus';
+    } else if (isComplexQuery || hasLargeContext) {
+      // Use more powerful model for complex analysis
+      return 'gemma-3-27b-it';
+    }
+
+    // Default: use configured model
+    return undefined;
   }
 
   private prepareContext(

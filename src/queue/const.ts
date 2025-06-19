@@ -30,3 +30,9 @@ export const QUEUE_PROCESSORS = {
     PROCESS_USER: 'posthog-events.process.user',
   },
 };
+
+export const LLM_MODELS = {
+  // REASONING: 'gemma-3-27b-it',
+  REASONING: 'mistral-7b-instruct-v0.3',
+  SUMMARY: 'mistral-7b-instruct-v0.3',
+};

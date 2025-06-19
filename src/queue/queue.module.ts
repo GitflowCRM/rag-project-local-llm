@@ -6,6 +6,7 @@ import { EventsModule } from '../events/events.module';
 import { QdrantModule } from '../qdrant/qdrant.module';
 import { QueueEventsController } from './queue-events.controller';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
+import { LlmModule } from '../llm/llm.module';
 import { ConfigService } from '@nestjs/config';
 import { ConfigModule } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
@@ -31,6 +32,7 @@ import { QUEUE_NAMES } from './const';
     EventsModule,
     QdrantModule,
     EmbeddingsModule,
+    LlmModule,
   ],
   controllers: [QueueEventsController],
   providers: [QueueEventsService, EventsSyncProcessor, PosthogEventsProcessor],

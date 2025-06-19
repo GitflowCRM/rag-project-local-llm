@@ -5,7 +5,8 @@ import { IngestionAttemptsService } from '../events/ingestion-attempts.service';
 import { FailureReason } from '../events/entities/ingestion-attempt.entity';
 import { QdrantService } from '../qdrant/qdrant.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
-import { QUEUE_NAMES, QUEUE_PROCESSORS } from './const';
+import { LlmService } from '../llm/llm.service';
+import { LLM_MODELS, QUEUE_NAMES, QUEUE_PROCESSORS } from './const';
 import { Logger } from '@nestjs/common';
 import { PosthogEvent } from '../events/entities/posthog-event.entity';
 import { InjectQueue } from '@nestjs/bull';
@@ -26,6 +27,7 @@ export class PosthogEventsProcessor extends WorkerHost {
     private readonly ingestionAttemptsService: IngestionAttemptsService,
     private readonly qdrantService: QdrantService,
     private readonly embeddingsService: EmbeddingsService,
+    private readonly llmService: LlmService,
     @InjectQueue(QUEUE_NAMES.POSTHOG_EVENTS)
     private readonly posthogEventsQueue: Queue,
   ) {
@@ -230,7 +232,7 @@ export class PosthogEventsProcessor extends WorkerHost {
 
     try {
       // Create a summary of all events for this user
-      const summary = this.createUserSummary(person_id, events);
+      const summary = await this.createLlmUserSummary(person_id, events);
 
       this.logger.debug(
         `[PosthogEventsProcessor] Generating embedding for user ${person_id}`,
@@ -331,6 +333,145 @@ export class PosthogEventsProcessor extends WorkerHost {
         throw error; // Re-throw to be handled by the main error handler
       }
     }
+  }
+
+  private async createLlmUserSummary(
+    person_id: string,
+    events: PosthogEvent[],
+  ): Promise<string> {
+    if (events.length === 0) {
+      return `User ${person_id}: No activity recorded`;
+    }
+
+    // Sort events by timestamp
+    events.sort(
+      (a, b) => (a.timestamp?.getTime() || 0) - (b.timestamp?.getTime() || 0),
+    );
+
+    // Prepare structured data for LLM
+    const userData = this.prepareUserDataForLlm(person_id, events);
+
+    const prompt = `You are an expert at analyzing user behavior data. Create a concise, insightful summary of this user's activity.
+
+User ID: ${person_id}
+
+User Activity Data:
+${userData}
+
+Please create a comprehensive summary that includes:
+1. User's primary activities and behavior patterns
+2. Device and app usage patterns
+3. Geographic and temporal patterns
+4. Shopping/cart behavior (if any)
+5. Key behavioral insights
+
+Keep the summary under 500 words and focus on the most important patterns and insights.`;
+
+    try {
+      const summary = await this.llmService.generateResponse(
+        prompt,
+        LLM_MODELS.SUMMARY,
+      );
+      return summary;
+    } catch (error) {
+      this.logger.warn(
+        `[PosthogEventsProcessor] LLM summary generation failed for user ${person_id}, falling back to text summary: ${error}`,
+      );
+      // Fallback to the original text-based summary
+      return this.createTextUserSummary(person_id, events);
+    }
+  }
+
+  private prepareUserDataForLlm(
+    person_id: string,
+    events: PosthogEvent[],
+  ): string {
+    // Extract key information from events
+    const eventTypes = new Set<string>();
+    const deviceInfo = new Set<string>();
+    const locationInfo = new Set<string>();
+    const cartInfo = new Set<string>();
+    const appInfo = new Set<string>();
+    const timeline: string[] = [];
+
+    for (const event of events) {
+      eventTypes.add(event.event);
+
+      if (event.timestamp) {
+        timeline.push(`${event.timestamp.toISOString()}: ${event.event}`);
+      }
+
+      // Extract properties
+      const properties = event.properties || {};
+
+      // Device info
+      if (properties['$device_name'])
+        deviceInfo.add(`Device: ${properties['$device_name']}`);
+      if (properties['$device_type'])
+        deviceInfo.add(`Type: ${properties['$device_type']}`);
+      if (properties['$os']) deviceInfo.add(`OS: ${properties['$os']}`);
+
+      // Location info
+      if (properties['$geoip_city_name'])
+        locationInfo.add(`City: ${properties['$geoip_city_name']}`);
+      if (properties['$geoip_country_name'])
+        locationInfo.add(`Country: ${properties['$geoip_country_name']}`);
+
+      // Cart info
+      if (properties['cartTotal'])
+        cartInfo.add(`Cart Total: ${properties['cartTotal']}`);
+      if (properties['itemsCount'])
+        cartInfo.add(`Items: ${properties['itemsCount']}`);
+      if (properties['cartCurrency'])
+        cartInfo.add(`Currency: ${properties['cartCurrency']}`);
+
+      // App info
+      if (properties['$app_name'])
+        appInfo.add(`App: ${properties['$app_name']}`);
+      if (properties['$app_version'])
+        appInfo.add(`Version: ${properties['$app_version']}`);
+    }
+
+    return `
+Total Events: ${events.length}
+Event Types: ${Array.from(eventTypes).join(', ')}
+Time Span: ${this.formatTimeSpan(events)}
+
+Device Information:
+${Array.from(deviceInfo).join('\n')}
+
+Location Information:
+${Array.from(locationInfo).join('\n')}
+
+App Information:
+${Array.from(appInfo).join('\n')}
+
+Cart Activity:
+${Array.from(cartInfo).join('\n')}
+
+Recent Timeline (last 10 events):
+${timeline.slice(-10).join('\n')}
+`;
+  }
+
+  private createTextUserSummary(
+    person_id: string,
+    events: PosthogEvent[],
+  ): string {
+    if (events.length === 0) {
+      return `User ${person_id}: No activity recorded`;
+    }
+
+    // Sort events by timestamp
+    events.sort(
+      (a, b) => (a.timestamp?.getTime() || 0) - (b.timestamp?.getTime() || 0),
+    );
+
+    // Flatten all event data into a comprehensive user profile
+    const userProfile = this.createFlattenedUserProfile(person_id, events);
+
+    // Truncate if too long to avoid token limit errors
+    return this.truncateForTokenLimit(userProfile);
   }
 
   private createUserSummary(person_id: string, events: PosthogEvent[]): string {
