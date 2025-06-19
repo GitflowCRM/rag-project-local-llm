@@ -267,34 +267,62 @@ export class PosthogEventsService {
   // Get all uningested events grouped by user with efficient SQL grouping
   async findUningestedEventsGroupedByUser(
     userLimit: number,
-  ): Promise<Map<string, PosthogEvent[]>> {
+  ): Promise<
+    Map<
+      string,
+      { events: PosthogEvent[]; person_properties: Record<string, any> }
+    >
+  > {
     // First, get the distinct user IDs that have uningested events
     const userSubquery = this.posthogEventRepository
       .createQueryBuilder('subevent')
-      .select('DISTINCT subevent.person_id')
+      .select('DISTINCT subevent.person_id, subevent.timestamp')
       .where('subevent.ingested_at IS NULL')
       .andWhere('subevent.person_id IS NOT NULL')
+      .andWhere('subevent.vendor_id IS NOT NULL')
+      .andWhere("subevent.person_properties->>'email' IS NOT NULL")
+      .andWhere("subevent.person_properties->>'email' != ''")
+      .andWhere('subevent.created_at >= :date', {
+        date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      })
+      .orderBy('subevent.timestamp', 'DESC')
       .limit(userLimit);
 
     // Then get all events for those users
     const events = await this.posthogEventRepository
       .createQueryBuilder('event')
       .where('event.ingested_at IS NULL')
-      .andWhere('event.person_id IN (' + userSubquery.getQuery() + ')')
+      .andWhere(
+        'event.person_id IN (SELECT DISTINCT person_id FROM (' +
+          userSubquery.getQuery() +
+          ') AS subq)',
+      )
       .setParameters(userSubquery.getParameters())
-      .orderBy('event.person_id', 'ASC')
-      .addOrderBy('event.timestamp', 'ASC')
+      .andWhere('event.created_at >= :date', {
+        date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      })
+      .andWhere("event.person_properties->>'email' IS NOT NULL")
+      .andWhere("event.person_properties->>'email' != ''")
+      .orderBy('event.timestamp', 'DESC')
+      .limit(30)
       .getMany();
 
-    // Group by person_id
-    const groupedEvents = new Map<string, PosthogEvent[]>();
+    // Group by person_id and include person_properties
+    const groupedEvents = new Map<
+      string,
+      { events: PosthogEvent[]; person_properties: Record<string, any> }
+    >();
+
     for (const event of events) {
       if (!event.person_id) continue;
 
       if (!groupedEvents.has(event.person_id)) {
-        groupedEvents.set(event.person_id, []);
+        groupedEvents.set(event.person_id, {
+          events: [],
+          person_properties: event.person_properties || {},
+        });
       }
-      groupedEvents.get(event.person_id).push(event);
+      groupedEvents.get(event.person_id).events.push(event);
     }
 
     return groupedEvents;
@@ -307,9 +335,14 @@ export class PosthogEventsService {
     return (
       this.posthogEventRepository
         .createQueryBuilder('event')
-        // .where('event.ingested_at IS NULL')
+        .where('event.ingested_at IS NULL')
         .andWhere('event.person_id = :person_id', { person_id })
         .orderBy('event.timestamp', 'ASC')
+        // for last 7 days
+        .andWhere('event.created_at >= :date', {
+          date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        })
+        .limit(30)
         .getMany()
     );
   }
@@ -338,7 +371,7 @@ export class PosthogEventsService {
       session_end: Date;
     }> = [];
 
-    for (const [person_id, events] of groupedEvents) {
+    for (const [person_id, { events }] of groupedEvents) {
       if (events.length === 0) continue;
 
       // Sort events by timestamp

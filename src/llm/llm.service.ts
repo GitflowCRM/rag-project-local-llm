@@ -54,11 +54,8 @@ interface QueryResponse {
   answer: string;
   sources: Array<{
     person_id: string;
-    event_count: number;
-    event_types: string[];
-    time_span: string;
-    summary: string;
     score: number;
+    summary: string;
   }>;
   metadata: {
     total_sources: number;
@@ -130,7 +127,7 @@ export class LlmService {
     const searchResults = await this.qdrantService.search(
       'posthog_events',
       queryEmbedding,
-      request.top_k || 10,
+      request.top_k || 3, // Limit to 3 by default
     );
     if (!searchResults.result || searchResults.result.length === 0) {
       return {
@@ -149,18 +146,21 @@ export class LlmService {
     // 4. Generate LLM response with model selection based on query complexity
     const prompt = this.buildPrompt(request.question, context);
     const answer = await this.generateResponse(prompt, LLM_MODELS.REASONING);
-    // 5. Format sources for response
-    const sources = searchResults.result.map((result) => {
-      const payload = result.payload as unknown as PosthogEventPayload;
-      return {
-        person_id: payload.person_id,
-        event_count: payload.event_count,
-        event_types: payload.event_types || [],
-        time_span: payload.time_span || 'Unknown',
-        summary: payload.summary || 'No summary available',
-        score: result.score,
-      };
-    });
+    // 5. Format sources for response (minimal fields only)
+    const sources = searchResults.result
+      .slice(0, request.top_k || 3)
+      .map((result) => {
+        const payload = result.payload as unknown as PosthogEventPayload;
+        let summary = payload.summary || 'No summary available';
+        if (summary.length > 150) {
+          summary = summary.substring(0, 147) + '...';
+        }
+        return {
+          person_id: payload.person_id,
+          score: result.score,
+          summary,
+        };
+      });
     return {
       question: request.question,
       answer,
@@ -285,6 +285,12 @@ export class LlmService {
         meta['shop_domains'] = (payload.shop_domains || []).join(', ');
         meta['time_span'] = payload.time_span;
 
+        // Add summary section
+        let summarySection = '';
+        if (payload.summary) {
+          summarySection = `\nSummary:\n${payload.summary}`;
+        }
+
         // Timeline: last N events
         let timeline = '';
         if (payload.events && payload.events.length > 0) {
@@ -312,7 +318,7 @@ export class LlmService {
           .map(([k, v]) => `- ${k}: ${v}`)
           .join('\n');
 
-        return `User Profile ${index + 1} (Score: ${(result.score * 100).toFixed(1)}%)\n${metaStr}\nRecent Events:\n${timeline}`;
+        return `User Profile ${index + 1} (Score: ${(result.score * 100).toFixed(1)}%)\n${metaStr}${summarySection}\nRecent Events:\n${timeline}`;
       })
       .join('\n---\n');
   }

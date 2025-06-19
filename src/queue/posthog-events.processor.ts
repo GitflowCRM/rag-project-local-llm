@@ -10,6 +10,7 @@ import { LLM_MODELS, QUEUE_NAMES, QUEUE_PROCESSORS } from './const';
 import { Logger } from '@nestjs/common';
 import { PosthogEvent } from '../events/entities/posthog-event.entity';
 import { InjectQueue } from '@nestjs/bull';
+import { USER_SUMMARY_PROMPT } from 'src/prompts';
 
 interface FindUsersJobData {
   batchSize: number;
@@ -17,6 +18,7 @@ interface FindUsersJobData {
 
 interface ProcessUserJobData {
   person_id: string;
+  person_properties: Record<string, any>;
 }
 
 @Processor(QUEUE_NAMES.POSTHOG_EVENTS, { concurrency: 1 })
@@ -172,13 +174,14 @@ export class PosthogEventsProcessor extends WorkerHost {
     // For each user, queue a job to process their events
     for (const [person_id, events] of groupedEvents) {
       this.logger.debug(
-        `[PosthogEventsProcessor] Queuing job for user ${person_id} with ${events.length} events`,
+        `[PosthogEventsProcessor] Queuing job for user ${person_id} with ${events.events.length} events`,
       );
+      const person_properties = events.person_properties;
 
       // Queue a PROCESS_USER job for this specific user
       await this.posthogEventsQueue.add(
         QUEUE_PROCESSORS.POSTHOG_EVENTS.PROCESS_USER,
-        { person_id },
+        { person_id, person_properties },
         {
           // Optional: Add some delay to avoid overwhelming the system
           delay: 1000, // 1 second delay between jobs
@@ -204,7 +207,7 @@ export class PosthogEventsProcessor extends WorkerHost {
     attemptId: string,
     startTime: number,
   ) {
-    const { person_id } = data;
+    const { person_id, person_properties } = data;
     this.logger.debug(
       `[PosthogEventsProcessor] Processing events for user ${person_id}`,
     );
@@ -232,7 +235,11 @@ export class PosthogEventsProcessor extends WorkerHost {
 
     try {
       // Create a summary of all events for this user
-      const summary = await this.createLlmUserSummary(person_id, events);
+      const summary = await this.createLlmUserSummary(
+        person_id,
+        events,
+        person_properties,
+      );
 
       this.logger.debug(
         `[PosthogEventsProcessor] Generating embedding for user ${person_id}`,
@@ -264,6 +271,7 @@ export class PosthogEventsProcessor extends WorkerHost {
           last_event: events[events.length - 1]?.timestamp?.toISOString(),
           // Store flattened data for better similarity search
           flattened_data: this.getFlattenedMetadata(events),
+          person_properties: person_properties,
           // Store individual events for detailed analysis
           events: events.map((e) => ({
             event: e.event,
@@ -338,6 +346,7 @@ export class PosthogEventsProcessor extends WorkerHost {
   private async createLlmUserSummary(
     person_id: string,
     events: PosthogEvent[],
+    person_properties: Record<string, any>,
   ): Promise<string> {
     if (events.length === 0) {
       return `User ${person_id}: No activity recorded`;
@@ -349,23 +358,13 @@ export class PosthogEventsProcessor extends WorkerHost {
     );
 
     // Prepare structured data for LLM
-    const userData = this.prepareUserDataForLlm(person_id, events);
+    const userData = this.prepareUserDataForLlm(
+      person_id,
+      events,
+      person_properties,
+    );
 
-    const prompt = `You are an expert at analyzing user behavior data. Create a concise, insightful summary of this user's activity.
-
-User ID: ${person_id}
-
-User Activity Data:
-${userData}
-
-Please create a comprehensive summary that includes:
-1. User's primary activities and behavior patterns
-2. Device and app usage patterns
-3. Geographic and temporal patterns
-4. Shopping/cart behavior (if any)
-5. Key behavioral insights
-
-Keep the summary under 500 words and focus on the most important patterns and insights.`;
+    const prompt = USER_SUMMARY_PROMPT(person_id, userData);
 
     try {
       const summary = await this.llmService.generateResponse(
@@ -385,6 +384,7 @@ Keep the summary under 500 words and focus on the most important patterns and in
   private prepareUserDataForLlm(
     person_id: string,
     events: PosthogEvent[],
+    person_properties: Record<string, any>,
   ): string {
     // Extract key information from events
     const eventTypes = new Set<string>();
@@ -393,7 +393,7 @@ Keep the summary under 500 words and focus on the most important patterns and in
     const cartInfo = new Set<string>();
     const appInfo = new Set<string>();
     const timeline: string[] = [];
-
+    const userInfo = new Set<string>();
     for (const event of events) {
       eventTypes.add(event.event);
 
@@ -403,6 +403,12 @@ Keep the summary under 500 words and focus on the most important patterns and in
 
       // Extract properties
       const properties = event.properties || {};
+
+      // User info
+      if (person_properties['email'])
+        userInfo.add(`Email: ${person_properties['email']}`);
+      if (person_properties['user_name'])
+        userInfo.add(`Name: ${person_properties['user_name']}`);
 
       // Device info
       if (properties['$device_name'])
@@ -451,6 +457,12 @@ ${Array.from(cartInfo).join('\n')}
 
 Recent Timeline (last 10 events):
 ${timeline.slice(-10).join('\n')}
+
+User Information:
+${Array.from(userInfo).join('\n')}
+
+User Properties:
+${JSON.stringify(person_properties)}
 `;
   }
 
@@ -458,23 +470,6 @@ ${timeline.slice(-10).join('\n')}
     person_id: string,
     events: PosthogEvent[],
   ): string {
-    if (events.length === 0) {
-      return `User ${person_id}: No activity recorded`;
-    }
-
-    // Sort events by timestamp
-    events.sort(
-      (a, b) => (a.timestamp?.getTime() || 0) - (b.timestamp?.getTime() || 0),
-    );
-
-    // Flatten all event data into a comprehensive user profile
-    const userProfile = this.createFlattenedUserProfile(person_id, events);
-
-    // Truncate if too long to avoid token limit errors
-    return this.truncateForTokenLimit(userProfile);
-  }
-
-  private createUserSummary(person_id: string, events: PosthogEvent[]): string {
     if (events.length === 0) {
       return `User ${person_id}: No activity recorded`;
     }

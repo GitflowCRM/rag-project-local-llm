@@ -33,6 +33,7 @@ export const QUEUE_PROCESSORS = {
 
 export const LLM_MODELS = {
   // REASONING: 'gemma-3-27b-it',
-  REASONING: 'mistral-7b-instruct-v0.3',
+  // REASONING: 'mistral-7b-instruct-v0.3',
+  REASONING: 'c4ai-command-r-v01',
   SUMMARY: 'mistral-7b-instruct-v0.3',
 };
