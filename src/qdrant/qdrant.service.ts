@@ -1,5 +1,11 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { AxiosError } from 'axios';
 import { catchError, firstValueFrom } from 'rxjs';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,7 +25,7 @@ interface QdrantPoint {
   };
 }
 
-interface QdrantSearchResult {
+export interface QdrantSearchResult {
   result: Array<{
     id: number;
     score: number;
@@ -27,25 +33,55 @@ interface QdrantSearchResult {
   }>;
 }
 
+interface QdrantHealthResponse {
+  title: string;
+  version: string;
+  status: string;
+}
+
+interface QdrantCollectionInfo {
+  name: string;
+  vectors_count: number;
+  points_count: number;
+  segments_count: number;
+  config: {
+    params: {
+      vectors: {
+        size: number;
+        distance: string;
+      };
+    };
+  };
+}
+
+interface QdrantCollectionsResponse {
+  collections: QdrantCollectionInfo[];
+}
+
 @Injectable()
 export class QdrantService implements OnModuleInit {
   private readonly logger = new Logger(QdrantService.name);
   private readonly baseUrl = process.env.QDRANT_URL || 'http://localhost:6333';
   private readonly vectorSize = 1536; // OpenAI embedding size
-  private readonly defaultCollection = 'events';
+  private readonly eventCollection = 'events';
+  private readonly posthogEventsCollection = 'posthog_events';
+  private readonly queryCacheCollection = 'query_cache';
 
   constructor(
     private readonly httpService: HttpService,
     @InjectRepository(Event)
     private readonly eventRepo: Repository<Event>,
     private readonly embeddingsService: EmbeddingsService,
+    @Inject(forwardRef(() => LlmService))
     private readonly llmService: LlmService,
   ) {}
 
   async onModuleInit() {
     try {
       await this.checkQdrantHealth();
-      await this.ensureCollectionExists(this.defaultCollection);
+      await this.ensureCollectionExists(this.eventCollection);
+      await this.ensureCollectionExists(this.posthogEventsCollection);
+      await this.ensureCollectionExists(this.queryCacheCollection);
       this.logger.log('Qdrant service initialized successfully');
     } catch (error) {
       this.logger.error(
@@ -59,7 +95,7 @@ export class QdrantService implements OnModuleInit {
     try {
       const healthUrl = `${this.baseUrl}/healthz`;
       const rs = await firstValueFrom(
-        this.httpService.get(healthUrl).pipe(
+        this.httpService.get<QdrantHealthResponse>(healthUrl).pipe(
           catchError((error: AxiosError) => {
             this.logger.error(
               `Qdrant health check failed: ${JSON.stringify(error.response?.data)}`,
@@ -85,7 +121,7 @@ export class QdrantService implements OnModuleInit {
       // Check if collection exists
       const checkUrl = `${this.baseUrl}/collections/${collection}`;
       const rs = await firstValueFrom(
-        this.httpService.get(checkUrl).pipe(
+        this.httpService.get<QdrantCollectionInfo>(checkUrl).pipe(
           catchError((error: AxiosError) => {
             if (error.response?.status === 404) {
               // Collection doesn't exist, create it
@@ -195,21 +231,15 @@ export class QdrantService implements OnModuleInit {
     collection: string,
     id: string,
     vector: number[],
-    payload: QdrantPoint['payload'],
+    payload: Record<string, any>,
   ): Promise<any> {
     const url = `${this.baseUrl}/collections/${collection}/points`;
     const body = {
       points: [
         {
-          id: parseInt(id, 10), // Qdrant expects integer IDs
+          id: id, // Use UUID string directly instead of converting to integer
           vector,
-          payload: {
-            ...payload,
-            event_timestamp:
-              typeof payload.event_timestamp === 'string'
-                ? payload.event_timestamp
-                : payload.event_timestamp.toISOString(),
-          },
+          payload,
         },
       ],
     };
@@ -362,6 +392,98 @@ Answer:`;
     } catch (error) {
       this.logger.error(
         `RAG search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      throw error;
+    }
+  }
+
+  async getHealth(): Promise<{
+    status: string;
+    title?: string;
+    version?: string;
+    error?: string;
+  }> {
+    try {
+      const healthUrl = `${this.baseUrl}/healthz`;
+      const response = await firstValueFrom(
+        this.httpService.get<QdrantHealthResponse>(healthUrl).pipe(
+          catchError((error: AxiosError) => {
+            this.logger.error('Health check failed:', error);
+            throw error;
+          }),
+        ),
+      );
+      return { status: 'healthy', ...response.data };
+    } catch (error) {
+      this.logger.error('Health check failed:', error);
+      return {
+        status: 'unhealthy',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  async getCollections(): Promise<QdrantCollectionsResponse> {
+    try {
+      const collectionsUrl = `${this.baseUrl}/collections`;
+      const response = await firstValueFrom(
+        this.httpService.get<QdrantCollectionsResponse>(collectionsUrl).pipe(
+          catchError((error: AxiosError) => {
+            this.logger.error('Failed to get collections:', error);
+            throw error;
+          }),
+        ),
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to get collections:', error);
+      throw error;
+    }
+  }
+
+  async getCollectionStats(
+    collectionName: string,
+  ): Promise<QdrantCollectionInfo> {
+    try {
+      const statsUrl = `${this.baseUrl}/collections/${collectionName}`;
+      const response = await firstValueFrom(
+        this.httpService.get<QdrantCollectionInfo>(statsUrl).pipe(
+          catchError((error: AxiosError) => {
+            this.logger.error(
+              `Failed to get stats for collection ${collectionName}:`,
+              error,
+            );
+            throw error;
+          }),
+        ),
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error(
+        `Failed to get stats for collection ${collectionName}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async getCollectionCount(collectionName: string): Promise<{
+    collection: string;
+    count: number;
+    vectors_count: number;
+  }> {
+    try {
+      const info: QdrantCollectionInfo =
+        await this.getCollectionStats(collectionName);
+      return {
+        collection: collectionName,
+        count: info.points_count,
+        vectors_count: info.vectors_count,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to get count for collection ${collectionName}:`,
+        error,
       );
       throw error;
     }

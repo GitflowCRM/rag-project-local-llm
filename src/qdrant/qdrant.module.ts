@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { QdrantService } from './qdrant.service';
@@ -12,7 +12,7 @@ import { LlmModule } from '../llm/llm.module';
     HttpModule,
     TypeOrmModule.forFeature([Event]),
     EmbeddingsModule,
-    LlmModule,
+    forwardRef(() => LlmModule),
   ],
   controllers: [QdrantController],
   providers: [QdrantService],

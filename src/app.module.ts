@@ -10,6 +10,7 @@ import { LlmModule } from './llm/llm.module';
 import { DataSource } from 'typeorm';
 import { WithLengthColumnType } from 'typeorm/driver/types/ColumnTypes';
 import { QdrantModule } from './qdrant/qdrant.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { QdrantModule } from './qdrant/qdrant.module';
         return dataSource;
       },
     }),
+    QueueModule,
     EventsModule,
     RagModule,
     EmbeddingsModule,

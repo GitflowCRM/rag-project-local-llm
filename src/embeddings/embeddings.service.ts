@@ -43,28 +43,4 @@ export class EmbeddingsService {
     const chunks = await textSplitter.splitText(text);
     return chunks;
   }
-
-  async updateEventEmbedding(
-    eventId: number,
-    eventData: Record<string, any>,
-  ): Promise<void> {
-    const chunks = await this.processEventData(eventData);
-    const embeddings = await this.generateEmbeddings(chunks);
-
-    // Use the first embedding as the event's embedding
-    if (embeddings.length > 0) {
-      await this.eventsService.updateEmbedding(eventId, embeddings[0]);
-    }
-  }
-
-  async storeEvents(
-    events: Array<{ id: number; embedding: number[] }>,
-  ): Promise<void> {
-    // Store embeddings in the database
-    await Promise.all(
-      events.map((event) =>
-        this.eventsService.updateEmbedding(event.id, event.embedding),
-      ),
-    );
-  }
 }

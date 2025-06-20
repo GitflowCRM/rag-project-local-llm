@@ -23,13 +23,16 @@ export class EventsService {
     return this.eventRepository.find();
   }
 
-  async findUningestedEvents(): Promise<Event[]> {
-    return this.eventRepository
+  async findUningestedEvents(batchSize?: number): Promise<Event[]> {
+    const query = this.eventRepository
       .createQueryBuilder('event')
       .where(
         'event.ingested_at IS NULL OR event.ingested_at < event.event_timestamp',
-      )
-      .getMany();
+      );
+    if (batchSize) {
+      query.take(batchSize);
+    }
+    return query.getMany();
   }
 
   async findOne(id: number): Promise<Event> {
@@ -52,11 +55,6 @@ export class EventsService {
       where: { event_type: eventType },
       order: { event_timestamp: 'DESC' },
     });
-  }
-
-  async updateEmbedding(id: number, embedding: number[]): Promise<Event> {
-    await this.eventRepository.update(id, { embedding });
-    return this.findOne(id);
   }
 
   async updateIngestedAt(id: number, timestamp: Date): Promise<Event> {
@@ -122,5 +120,9 @@ export class EventsService {
       pendingIngestion: pendingEvents,
       lastIngestedAt: lastIngestedEvent?.ingested_at || null,
     };
+  }
+
+  async markAsIngested(id: number) {
+    await this.eventRepository.update(id, { ingested_at: new Date() });
   }
 }
