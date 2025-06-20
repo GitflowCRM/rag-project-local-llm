@@ -364,7 +364,11 @@ export class PosthogEventsProcessor extends WorkerHost {
       person_properties,
     );
 
-    const prompt = USER_SUMMARY_PROMPT(person_id, userData);
+    const prompt = USER_SUMMARY_PROMPT({
+      question: "Summarize the user's activity",
+      person_id,
+      userData,
+    });
 
     try {
       const summary = await this.llmService.generateResponse(

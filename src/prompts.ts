@@ -1,107 +1,106 @@
-export const USER_SUMMARY_PROMPT = (person_id: string, userData: string) => `
-You are a senior analytics expert. Given the user's event and metadata log, you must extract **meaningful structured metadata** and provide a concise behavioral summary.
+export const USER_SUMMARY_PROMPT = ({
+  question,
+  person_id,
+  userData,
+}: {
+  question: string;
+  person_id: string;
+  userData: string;
+}) => `
+You are a senior analytics expert. Given the user's event and metadata log, extract meaningful structured metadata and provide a concise behavioral summary.
 
-User ID: ${person_id}
+---
 
-User Event & Metadata Logs:
+**Question:** ${question}  
+**User ID:** ${person_id}
+
+**User Logs (events + metadata):**  
 ${userData}
 
 ---
 
-### 1. Metadata (key-value JSON)
+### 1. Metadata (as key-value JSON)
 
-Extract all important metadata in this format:
+Extract only the most relevant fields. Avoid duplicating values or including nulls. Output example:
 
 \`\`\`json
 {
-  "deviceType": "Mobile | Tablet | Desktop",
-  "os": "iOS | Android | Other",
-  "osVersion": "e.g. 17.0",
-  "appVersion": "e.g. 1.1.3",
-  "deviceModel": "e.g. iPhone 14",
-  "manufacturer": "e.g. Apple",
-  "screenSize": "e.g. 1170x2532",
+  "deviceType": "Mobile",
+  "os": "iOS",
+  "osVersion": "18.3.1",
+  "appVersion": "2.0.1",
+  "deviceModel": "iPhone 14",
+  "manufacturer": "Apple",
+  "screenSize": "390x844",
   "geo": {
     "country": "United Arab Emirates",
     "city": "Sharjah",
     "timezone": "Asia/Dubai"
   },
   "email": "user@example.com",
-  "phone": "+971501234567",
-  "name": "John Doe",
-  "country": "United Arab Emirates",
-  "city": "Sharjah",
-  "timezone": "Asia/Dubai",
-  "language": "English",
-  "sessionFrequency": "e.g. 3 sessions in 2 days",
-  "lastActivityAt": "ISO Timestamp",
-  "cartActivity": "Added | Cleared | Abandoned | None",
-  "featureFlagsUsed": ["MY_SHOP_DOMAIN", ...],
-  "userType": "Power Shopper | Casual Browser | First-time User | Abandoner | Bug Tester",
-  "shopDomain": "superhero-tshirts-store.myshopify.com",
-  "vendorId": "gid://shopify/Shop/66829451403",
-  "name": "muneer@gitspark.com",
-  "email": "muneer@gitspark.com",
-  "vendor": { "id": "gid://shopify/Shop/66829451403", "shopDomain": "" },
-  "issuedAt": 1747408798858,
-  "$app_name": "Appify.it Preview",
-  "$app_build": "11",
-  "$initial_os": "iOS",
-  "$os_version": "18.3.1",
-  "$app_version": "1.1.3",
-  "$device_type": "Mobile",
-  "$screen_width": 430,
+  "name": "Muneer P.",
   "emailVerified": false,
-  "$app_namespace": "com.gitspark.appbuilder.vendor",
-  "$screen_height": 932,
-  "$geoip_latitude": 25.3412,
-  "notification_id": "ccbfd7ff-092c-44c4-9c7b-8ef19c74319e",
-  "oneSignalUserId": "ccbfd7ff-092c-44c4-9c7b-8ef19c74319e",
-  "$geoip_city_name": "Sharjah",
-  "$geoip_longitude": 55.4224,
-  "$geoip_time_zone": "Asia/Dubai",
-  "$initial_app_name": "Appify.it Preview",
-  "$geoip_postal_code": null,
-  "$initial_app_build": "11",
-  "$creator_event_uuid": "0196d7d6-9129-73d6-8989-a04f82915609",
-  "$geoip_country_code": "AE",
-  "$geoip_country_name": "United Arab Emirates",
-  "$initial_os_version": "18.3.1",
-  "$initial_app_version": "1.1.3",
-  "$initial_device_type": "Mobile",
-  "$geoip_continent_code": "AS",
-  "$geoip_continent_name": "Asia",
-  "$initial_screen_width": 430,
-  "$geoip_accuracy_radius": 20,
-  "$geoip_city_confidence": null,
-  "$initial_app_namespace": "com.gitspark.appbuilder.vendor",
-  "$initial_screen_height": 932,
-  "$initial_geoip_latitude": 25.3412,
-  "$initial_geoip_city_name": "Sharjah",
-  "$initial_geoip_longitude": 55.4224,
-  "$initial_geoip_time_zone": "Asia/Dubai",
-  "$geoip_subdivision_1_code": "SH",
-  "$geoip_subdivision_1_name": "Sharjah",
-  "$geoip_subdivision_2_code": null,
-  "$geoip_subdivision_2_name": null,
-  "$initial_geoip_postal_code": null,
-  "$initial_geoip_country_code": "AE",
-  "$initial_geoip_country_name": "United Arab Emirates",
-  "$initial_geoip_continent_code": "AS",
-  "$initial_geoip_continent_name": "Asia",
-  "$initial_geoip_accuracy_radius": 20,
-  "$initial_geoip_city_confidence": null,
-  "$initial_geoip_subdivision_1_code": "SH",
-  "$initial_geoip_subdivision_1_name": "Sharjah",
-  "$initial_geoip_subdivision_2_code": null,
-  "$initial_geoip_subdivision_2_name": null
+  "language": "English",
+  "cartActivity": "Added | Cleared | Abandoned | None",
+  "featureFlagsUsed": ["MY_SHOP_DOMAIN"],
+  "userType": "Power Shopper | First-time User | Abandoner",
+  "vendorId": "gid://shopify/Shop/123456789",
+  "shopDomain": "mybrand.myshopify.com",
+  "sessionFrequency": "e.g. 3 sessions in 2 days",
+  "lastActivityAt": "2025-06-20T12:34:56Z"
 }
 \`\`\`
 
-### 2. Behavioral Summary (under 500 words)
+---
 
-Write a natural language summary based on the above metadata and event sequence. Highlight the user’s primary intent, patterns, and any unique observations (e.g., crash loop, high cart churn, feature usage).
+### 2. Behavioral Summary (max 500 words)
+
+Describe the user’s key behaviors, device/app usage, purchase intent, session patterns, and any outliers (e.g., crash loops, abandoned carts, new feature exploration).
 
 ---
 
-Return only these two sections: structured metadata and summary.`;
+Return **only** the above two sections.
+`;
+
+export const DATA_ANALYSIS_PROMPT = (contextString: string) => `
+You are an AI assistant that analyzes user behavior data from PostHog event logs. Your goal is to find the **top 3 users most likely to convert** based on their activity.
+
+You have access to a list of summarized user profiles, each with:
+- event_count
+- event_types
+- vendor/shop info
+- device and OS
+- timestamps and location info (if available)
+- engagement or interaction scores (if present)
+
+---
+
+### Question:
+> Identify the top 3 users who are **easiest to convert** (e.g., most likely to make a purchase or complete an important funnel step).
+
+---
+
+### Context:
+${contextString}  // inject your formatted "User Profile 1... User Profile 2..." block
+
+---
+
+### Instructions:
+1. Analyze user behavior and rank the **top 3 users** based on signs of shopping intent (e.g., cart updates, screen navigation, high session activity).
+2. Prioritize these signals:
+   - "cart_updated", "checkout_started", "product_viewed"
+   - session re-activation (e.g. app opened → backgrounded → reopened)
+   - consistent device use (mobile vs. tablet), OS, or location stability
+3. If confidence is low for any user, explain why.
+4. Return output in the following format:
+
+\`\`\`json
+[
+  {
+    "person_id": "abc-123",
+    "reason": "High cart activity, multiple app sessions, consistent iOS usage",
+    "confidence_score": 0.85
+  }
+]
+\`\`\`
+`;

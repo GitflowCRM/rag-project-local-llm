@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { QdrantService } from '../qdrant/qdrant.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { LLM_MODELS } from '../queue/const';
+import { DATA_ANALYSIS_PROMPT } from 'src/prompts';
 
 interface LLMResponse {
   choices: Array<{
@@ -67,6 +68,7 @@ interface QueryResponse {
 @Injectable()
 export class LlmService {
   private readonly apiUrl: string;
+  private readonly apiKey: string;
   private readonly model: string;
   private readonly temperature: number;
   private readonly maxTokens: number;
@@ -75,8 +77,10 @@ export class LlmService {
     private readonly configService: ConfigService,
     private readonly qdrantService: QdrantService,
     private readonly embeddingsService: EmbeddingsService,
+    private readonly logger: Logger,
   ) {
     this.apiUrl = this.configService.get<string>('LLM_API_URL') || '';
+    this.apiKey = this.configService.get<string>('LLM_API_KEY') || '';
     this.model = this.configService.get<string>('LLM_MODEL') || '';
     this.temperature = this.configService.get<number>('LLM_TEMPERATURE') || 0.2;
     this.maxTokens = this.configService.get<number>('LLM_MAX_TOKENS') || 4096;
@@ -89,13 +93,29 @@ export class LlmService {
     try {
       const modelToUse = modelOverride || this.model;
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (this.apiKey) {
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
+      }
+
+      this.logger.log(`Calling LLM with question: ${prompt}`);
+      const promptLength = prompt.length;
+      this.logger.log(`Prompt length: ${promptLength}`);
+      if (promptLength > 10000) {
+        this.logger.log(`Prompt length is too long: ${promptLength}`);
+        throw new Error('Prompt length is too long');
+      }
+
       const response = await axios.post<LLMResponse>(
         `${this.apiUrl}/chat/completions`,
         {
           model: modelToUse,
-          temperature: this.temperature,
+          temperature: Number(this.temperature),
           stream: false,
-          max_tokens: this.maxTokens,
+          max_tokens: Number(this.maxTokens),
           messages: [
             {
               role: 'user',
@@ -104,9 +124,7 @@ export class LlmService {
           ],
         },
         {
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers,
         },
       );
 
@@ -144,7 +162,7 @@ export class LlmService {
     // 3. Prepare context from search results
     const context = this.prepareContext(searchResults.result);
     // 4. Generate LLM response with model selection based on query complexity
-    const prompt = this.buildPrompt(request.question, context);
+    const prompt = DATA_ANALYSIS_PROMPT(context);
     const answer = await this.generateResponse(prompt, LLM_MODELS.REASONING);
     // 5. Format sources for response (minimal fields only)
     const sources = searchResults.result
@@ -321,23 +339,5 @@ export class LlmService {
         return `User Profile ${index + 1} (Score: ${(result.score * 100).toFixed(1)}%)\n${metaStr}${summarySection}\nRecent Events:\n${timeline}`;
       })
       .join('\n---\n');
-  }
-
-  private buildPrompt(question: string, context: string): string {
-    return `You are an AI assistant that analyzes user behavior data from PostHog events. You have access to detailed user profiles and activity summaries.
-
-Question: ${question}
-
-Context from user activity data:
-${context}
-
-Instructions:
-1. Analyze the provided user activity data to answer the question
-2. Be specific and reference the data when possible
-3. If the data doesn't contain enough information to answer the question, say so
-4. Focus on user behavior patterns, device usage, location data, and app interactions
-5. Provide insights about user engagement, shopping behavior, and technical context
-
-Please provide a comprehensive answer based on the user activity data:`;
   }
 }
