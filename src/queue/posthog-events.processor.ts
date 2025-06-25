@@ -263,9 +263,6 @@ export class PosthogEventsProcessor extends WorkerHost {
           vendor_ids: Array.from(
             new Set(events.map((e) => e.vendor_id).filter(Boolean)),
           ),
-          shop_domains: Array.from(
-            new Set(events.map((e) => e.shopdomain).filter(Boolean)),
-          ),
           time_span: this.formatTimeSpan(events),
           first_event: events[0]?.timestamp?.toISOString(),
           last_event: events[events.length - 1]?.timestamp?.toISOString(),
@@ -522,7 +519,6 @@ ${JSON.stringify(person_properties)}
         timestamps.push(event.timestamp.toISOString());
       }
       if (event.vendor_id) vendorIds.add(event.vendor_id);
-      if (event.shopdomain) shopDomains.add(event.shopdomain);
 
       // Flatten event properties
       const properties = event.properties || {};

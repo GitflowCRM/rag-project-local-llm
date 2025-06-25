@@ -36,7 +36,6 @@ export class PosthogEventsService {
       uuid: event.uuid,
       person_id: event.person_id,
       vendor_id: event.vendor_id,
-      shopdomain: event.shopdomain,
       ...flattenedProps,
     };
 
@@ -87,7 +86,7 @@ export class PosthogEventsService {
     // Group related fields together
     const groups = {
       event: ['event_type', 'timestamp', 'uuid', 'person_id'],
-      vendor: ['vendor_id', 'shopdomain'],
+      vendor: ['vendor_id'],
       device: [
         'properties_$device_name',
         'properties_$device_type',
@@ -289,23 +288,28 @@ export class PosthogEventsService {
       .limit(userLimit);
 
     // Then get all events for those users
-    const events = await this.posthogEventRepository
-      .createQueryBuilder('event')
-      .where('event.ingested_at IS NULL')
-      .andWhere(
-        'event.person_id IN (SELECT DISTINCT person_id FROM (' +
-          userSubquery.getQuery() +
-          ') AS subq)',
-      )
-      .setParameters(userSubquery.getParameters())
-      .andWhere('event.created_at >= :date', {
-        date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      })
-      .andWhere("event.person_properties->>'email' IS NOT NULL")
-      .andWhere("event.person_properties->>'email' != ''")
-      .orderBy('event.timestamp', 'DESC')
-      .limit(30)
-      .getMany();
+    let events: PosthogEvent[] = [];
+    try {
+      events = await this.posthogEventRepository
+        .createQueryBuilder('event')
+        .where('event.ingested_at IS NULL')
+        .andWhere(
+          'event.person_id IN (SELECT DISTINCT person_id FROM (' +
+            userSubquery.getQuery() +
+            ') AS subq)',
+        )
+        .setParameters(userSubquery.getParameters())
+        .andWhere('event.created_at >= :date', {
+          date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        })
+        .andWhere("event.person_properties->>'email' IS NOT NULL")
+        .andWhere("event.person_properties->>'email' != ''")
+        .orderBy('event.timestamp', 'DESC')
+        .limit(30)
+        .getMany();
+    } catch (error) {
+      console.error(error);
+    }
 
     // Group by person_id and include person_properties
     const groupedEvents = new Map<
