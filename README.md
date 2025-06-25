@@ -308,3 +308,13 @@ For more details, see the code in the `src/` directory or ask for help!
 
 
 How to clear QDRANT DATA for collection?
+
+
+curl -X POST \
+  "http://localhost:6333/collections/my_collection/points/delete" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "filter": {
+          "must": []
+        }
+      }'

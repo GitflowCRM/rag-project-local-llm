@@ -37,5 +37,5 @@ export const LLM_MODELS = {
   REASONING: 'mistral-7b-instruct-v0.3',
   // REASONING: 'mistral-7b-instruct-v0.3',
   // REASONING: 'deepseek-r1-distill-qwen-7b',
-  SUMMARY: 'mistral-7b-instruct-v0.3',
+  SUMMARY: 'gemma-3-27b-it',
 };

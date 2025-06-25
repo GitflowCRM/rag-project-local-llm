@@ -1,3 +1,70 @@
+// export const USER_SUMMARY_PROMPT = ({
+//   question,
+//   person_id,
+//   userData,
+// }: {
+//   question: string;
+//   person_id: string;
+//   userData: string;
+// }) => `
+// You are a senior analytics expert. Given the user's event and metadata log, extract meaningful structured metadata and provide a concise behavioral summary.
+
+// ---
+
+// **Question:** ${question}
+// **User ID:** ${person_id}
+
+// **User Logs (events + metadata):**
+// ${userData}
+
+// ---
+
+// ### 1. Metadata (as key-value JSON)
+
+// Extract only the most relevant fields. Avoid duplicating values or including nulls. Output example:
+
+// \`\`\`json
+// {
+//   "deviceType": "Mobile",
+//   "os": "iOS",
+//   "osVersion": "18.3.1",
+//   "appVersion": "2.0.1",
+//   "deviceModel": "iPhone 14",
+//   "manufacturer": "Apple",
+//   "screenSize": "390x844",
+//   "geo": {
+//     "country": "United Arab Emirates",
+//     "city": "Sharjah",
+//     "timezone": "Asia/Dubai"
+//   },
+//   "email": "user@example.com",
+//   "name": "Muneer P.",
+//   "emailVerified": false,
+//   "language": "English",
+//   "cartActivity": "Added | Cleared | Abandoned | None",
+//   "featureFlagsUsed": ["MY_SHOP_DOMAIN"],
+//   "userType": "Power Shopper | First-time User | Abandoner",
+//   "vendorId": "gid://shopify/Shop/123456789",
+//   "shopDomain": "mybrand.myshopify.com",
+//   "sessionFrequency": "e.g. 3 sessions in 2 days",
+//   "lastActivityAt": "2025-06-20T12:34:56Z"
+// }
+// \`\`\`
+
+// ---
+
+// ### 2. Behavioral Summary (max 500 words)
+
+// Describe the user’s key behaviors, device/app usage, purchase intent, session patterns, and any outliers (e.g., crash loops, abandoned carts, new feature exploration).
+
+// Create an array of tags for classifications
+// ["segment1" , "segment2" , "segment3" ]
+
+// ---
+
+// Return **only** the above two sections.
+// `;
+
 export const USER_SUMMARY_PROMPT = ({
   question,
   person_id,
@@ -7,59 +74,87 @@ export const USER_SUMMARY_PROMPT = ({
   person_id: string;
   userData: string;
 }) => `
-You are a senior analytics expert. Given the user's event and metadata log, extract meaningful structured metadata and provide a concise behavioral summary.
+You are an AI data analyst. Analyze the following raw PostHog user event logs and generate a **clean, structured metadata object** and a **concise behavioral summary** that describes the user's app usage, habits, and intent.
 
 ---
 
-**Question:** ${question}  
 **User ID:** ${person_id}
 
-**User Logs (events + metadata):**  
+**User Logs (events + metadata):**
 ${userData}
+
+**Question:** ${question}
 
 ---
 
-### 1. Metadata (as key-value JSON)
+### Your Output Must Include:
 
-Extract only the most relevant fields. Avoid duplicating values or including nulls. Output example:
+#### 1. Metadata (key-value pairs in JSON)
+
+Extract meaningful behavioral signals from the event data such as:
+
+- sessionCount: number
+- totalEventCount: number
+- activeDays: number
+- averageSessionDuration: string
+- primaryDevice: e.g. "iPhone"
+- osVersion: string
+- cartActivity: "none" | "added" | "cleared" | "abandoned"
+- pushEnabled: boolean
+- emailVerified: boolean
+- location: country/city if available
+- firstSeen: ISO timestamp
+- lastSeen: ISO timestamp
+- recentActivity: [event_type_1, event_type_2, …]
+- featureFlagsUsed: string[]
+- screenCount: number
+- highIntentSignals: [“cart_updated”, “checkout_started”, “product_viewed”]
+- churnRisk: boolean (based on patterns like inactivity, no conversions)
+- conversionLikely: boolean (based on signals like checkout_started, multiple reactivations)
+
+You may add **any other metadata fields** that would help us answer future questions like:
+- “Which users explored but didn’t buy?”
+- “Who enabled push notifications but churned?”
+- “Who spent the most time in app?”
+
+#### 2. Behavioral Summary (max 40 words)
+
+Write a short natural-language summary of this user’s activity.
+
+---
+
+### Final Output Format (return only this JSON)
 
 \`\`\`json
 {
-  "deviceType": "Mobile",
-  "os": "iOS",
-  "osVersion": "18.3.1",
-  "appVersion": "2.0.1",
-  "deviceModel": "iPhone 14",
-  "manufacturer": "Apple",
-  "screenSize": "390x844",
-  "geo": {
-    "country": "United Arab Emirates",
-    "city": "Sharjah",
-    "timezone": "Asia/Dubai"
+  "person_id": "${person_id}",
+  "metadata": {
+    "sessionCount": 3,
+    "totalEventCount": 48,
+    "activeDays": 2,
+    "primaryDevice": "iPhone 14",
+    "osVersion": "iOS 18.3.1",
+    "cartActivity": "added",
+    "pushEnabled": true,
+    "churnRisk": false,
+    "conversionLikely": true,
+    "location": {
+      "country": "UAE",
+      "city": "Dubai"
+    },
+    "firstSeen": "2025-06-18T12:30:10Z",
+    "lastSeen": "2025-06-20T09:42:01Z",
+    "featureFlagsUsed": ["vendor_store_enabled"],
+    "highIntentSignals": ["cart_updated", "screen_checkout"],
+    "recentActivity": ["screen_home", "cart_updated", "application_backgrounded"],
+    "userSegments": [{trait : "discount_shopper", reason   : "user is a discount shopper"}, {trait : "first_time_user", reason : "user is a first time user"}, {trait : "abandoner", reason : "user is an abandoner"}, {trait : "iphone_user", reason : "user is an iphone user"}, {trait : "mobile_user", reason : "user is a mobile user"}, {trait : "tablet_user", reason : "user is a tablet user"}, {trait : "desktop_user", reason : "user is a desktop user"}, {trait : "any_meaningfull_segment", reason : "user is a any meaningfull segment"}],
+    "userType": "Power Shopper | First-time User | Abandoner"
   },
-  "email": "user@example.com",
-  "name": "Muneer P.",
-  "emailVerified": false,
-  "language": "English",
-  "cartActivity": "Added | Cleared | Abandoned | None",
-  "featureFlagsUsed": ["MY_SHOP_DOMAIN"],
-  "userType": "Power Shopper | First-time User | Abandoner",
-  "vendorId": "gid://shopify/Shop/123456789",
-  "shopDomain": "mybrand.myshopify.com",
-  "sessionFrequency": "e.g. 3 sessions in 2 days",
-  "lastActivityAt": "2025-06-20T12:34:56Z"
+  "summary": "User visited 3 sessions in 2 days, updated cart, used iPhone, and shows high purchase intent but no checkout recorded yet."
 }
 \`\`\`
 
----
-
-### 2. Behavioral Summary (max 500 words)
-
-Describe the user’s key behaviors, device/app usage, purchase intent, session patterns, and any outliers (e.g., crash loops, abandoned carts, new feature exploration).
-
----
-
-Return **only** the above two sections.
+Only return the JSON block above. Be consistent with field names and values.
 `;
 
 export const DATA_ANALYSIS_PROMPT = (contextString: string) => `
