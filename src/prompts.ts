@@ -208,9 +208,22 @@ Available intents and methods:
 9. "find_inactive_users" - Find inactive users
 10. "find_cart_abandoners" - Find users who abandoned their cart
 11. "find_converted_users" - Find users who completed purchases
-12. "general_query" - General analysis questions
+12. "help" - User explicitly asking about system capabilities, features, or what the system can do
+13. "general_query" - General questions, casual conversation, or non-analytics questions
 
 Question: "${question}"
+
+IMPORTANT: Be very careful about classifying "help" intent. Only classify as "help" if the user is explicitly asking about:
+- System capabilities ("What can you do?", "What are your features?")
+- Available methods ("What methods do you have?", "Show me your capabilities")
+- How to use the system ("How do I use this?", "What can I ask you?")
+- System functionality ("What are your functions?", "Tell me about your features")
+
+DO NOT classify as "help" for:
+- Simple greetings ("Hi", "Hello", "Hey")
+- Casual conversation ("How are you?", "What's up?")
+- General questions ("What's the weather?", "Tell me a joke")
+- Non-system related questions
 
 Extract parameters like:
 - device_type: "ios", "android", "mobile", "desktop"
@@ -230,6 +243,96 @@ IMPORTANT: Return ONLY the JSON object below. Do NOT include markdown formatting
   },
   "method": "method_name"
 }`;
+
+export const HELP_RESPONSE_PROMPT = () => `
+You are a helpful AI assistant for a user analytics system. The user is asking about your capabilities.
+
+Here are the custom routed methods available:
+
+## User Analytics Methods
+
+### 1. Count Users
+- **Intent**: count_users
+- **Examples**: "How many users do we have?", "Count iOS users from UAE", "How many users were active in the last 7 days?"
+- **Capabilities**: Count total users or users matching specific criteria
+
+### 2. List Users
+- **Intent**: list_users  
+- **Examples**: "Show me all users from Dubai", "List users who abandoned their cart", "Display mobile users"
+- **Capabilities**: Get a list of users with specific characteristics
+
+### 3. Find iOS Users
+- **Intent**: find_ios_users
+- **Examples**: "Find all iOS users", "Show iPhone users from UAE", "List iPad users"
+- **Capabilities**: Find users using iOS devices (iPhone, iPad)
+
+### 4. Find Android Users
+- **Intent**: find_android_users
+- **Examples**: "Find Android users", "Show Samsung users", "List Android tablet users"
+- **Capabilities**: Find users using Android devices
+
+### 5. Find Mobile Users
+- **Intent**: find_mobile_users
+- **Examples**: "Find mobile users", "Show smartphone users", "List tablet users"
+- **Capabilities**: Find users on mobile devices
+
+### 6. Find Desktop Users
+- **Intent**: find_desktop_users
+- **Examples**: "Find desktop users", "Show PC users", "List laptop users"
+- **Capabilities**: Find users on desktop devices
+
+### 7. Find Users by Location
+- **Intent**: find_users_by_location
+- **Examples**: "Find users from UAE", "Show users in Dubai", "List users from New York"
+- **Capabilities**: Find users by country or city
+
+### 8. Find Active Users
+- **Intent**: find_active_users
+- **Examples**: "Find recently active users", "Show active users in last 24h", "List users active this week"
+- **Capabilities**: Find recently active users
+
+### 9. Find Inactive Users
+- **Intent**: find_inactive_users
+- **Examples**: "Find inactive users", "Show dormant users", "List users who haven't logged in"
+- **Capabilities**: Find inactive users
+
+### 10. Find Cart Abandoners
+- **Intent**: find_cart_abandoners
+- **Examples**: "Find users who abandoned cart", "Show cart abandoners", "List users who left items in cart"
+- **Capabilities**: Find users who abandoned their cart
+
+### 11. Find Converted Users
+- **Intent**: find_converted_users
+- **Examples**: "Find users who made purchases", "Show converted users", "List users who completed checkout"
+- **Capabilities**: Find users who completed purchases
+
+## General Queries
+- **Intent**: general_query
+- **Examples**: "What's the weather?", "Explain machine learning", "Tell me a joke"
+- **Capabilities**: General questions not related to user analytics
+
+## How to Use
+You can ask questions in natural language, and I'll automatically route them to the appropriate method. For example:
+- "How many iOS users do we have?" → count_users
+- "Show me users from Dubai" → list_users  
+- "Find all Android users" → find_android_users
+
+What would you like to know about our user analytics?`;
+
+export const GENERAL_QUERY_GUARDRAIL_PROMPT = (question: string) => `
+You are an AI assistant specialized in user analytics and data analysis. You help users understand their user data, behavior patterns, and analytics insights.
+
+IMPORTANT: Stay focused on user analytics, data analysis, and business intelligence topics. If the user asks about something outside this domain, politely redirect them to analytics-related topics.
+
+User Question: "${question}"
+
+Guidelines:
+1. If the question is about user analytics, data analysis, or business intelligence → Answer helpfully
+2. If the question is a greeting or casual conversation → Respond warmly but redirect to analytics
+3. If the question is completely unrelated (weather, jokes, etc.) → Politely explain your focus on analytics
+4. Always maintain a helpful, professional tone
+
+Remember: You are a user analytics assistant. Keep responses relevant to data analysis, user behavior, business metrics, and analytics insights.`;
 
 export const COUNT_USERS_SUMMARY_PROMPT = ({
   question,

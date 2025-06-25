@@ -10,6 +10,8 @@ import {
   COUNT_USERS_SUMMARY_PROMPT,
   FIND_IOS_USERS_SUMMARY_PROMPT,
   LIST_USERS_SUMMARY_PROMPT,
+  HELP_RESPONSE_PROMPT,
+  GENERAL_QUERY_GUARDRAIL_PROMPT,
 } from 'src/prompts';
 import { Response } from 'express';
 
@@ -849,10 +851,10 @@ export class LlmService {
         result = await this.listUsers(intentResult.parameters, stream, res);
         break;
       case 'general_query':
-        // Pass question directly to LLM without RAG processing
+        // Pass question directly to LLM without RAG processing, but with guardrails
         if (stream && res) {
           await this.generateResponse({
-            prompt: request.question,
+            prompt: GENERAL_QUERY_GUARDRAIL_PROMPT(request.question),
             modelOverride: LLM_MODELS.REASONING,
             stream: true,
             res,
@@ -860,17 +862,17 @@ export class LlmService {
           return;
         } else {
           const llmAnswer = await this.generateResponse({
-            prompt: request.question,
+            prompt: GENERAL_QUERY_GUARDRAIL_PROMPT(request.question),
             modelOverride: LLM_MODELS.REASONING,
             stream: false,
           });
-
+          
           result = {
             question: request.question,
             answer:
               typeof llmAnswer === 'string'
                 ? llmAnswer
-                : 'No response generated',
+                : 'I focus on user analytics and data analysis. How can I help you with your user data insights?',
             intent: 'general_query',
             method_used: 'direct_llm',
             sources: [],
@@ -880,6 +882,42 @@ export class LlmService {
               cached: false,
               model_used: LLM_MODELS.REASONING,
               confidence: intentResult.confidence,
+            },
+          };
+        }
+        break;
+      case 'help':
+        // Handle help queries by providing information about available methods
+        if (stream && res) {
+          await this.generateResponse({
+            prompt: HELP_RESPONSE_PROMPT(),
+            modelOverride: LLM_MODELS.REASONING,
+            stream: true,
+            res,
+          });
+          return;
+        } else {
+          const helpAnswer = await this.generateResponse({
+            prompt: HELP_RESPONSE_PROMPT(),
+            modelOverride: LLM_MODELS.REASONING,
+            stream: false,
+          });
+
+          result = {
+            question: request.question,
+            answer:
+              typeof helpAnswer === 'string'
+                ? helpAnswer
+                : HELP_RESPONSE_PROMPT(),
+            intent: 'help',
+            method_used: 'help_response',
+            sources: [],
+            metadata: {
+              total_sources: 0,
+              search_time_ms: Date.now() - startTime,
+              cached: false,
+              model_used: LLM_MODELS.REASONING,
+              confidence: 1.0,
             },
           };
         }
