@@ -42,6 +42,9 @@ interface CachedQueryResponse {
     cache_hit_score?: number;
     model_used?: string;
     improved?: boolean;
+    confidence?: number;
+    intent?: string;
+    method_used?: string;
   };
 }
 
@@ -99,6 +102,62 @@ export class LlmController {
         search_time_ms: result.metadata.search_time_ms,
         cached: false,
         model_used: result.metadata.model_used,
+      },
+    };
+
+    await this.cacheQueryResult(request.question, cachedResponse);
+    return cachedResponse;
+  }
+
+  @Post('routed-query')
+  @ApiOperation({
+    summary:
+      'Query PostHog user events using NLP intent detection and method routing',
+  })
+  async routedQuery(
+    @Body() request: QueryRequest,
+    @Query('stream') stream?: string,
+    @Res() res?: Response,
+  ): Promise<CachedQueryResponse | void> {
+    if (stream === 'true' && res) {
+      // Set OpenAI-style streaming headers
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+      // Process routed query with streaming
+      await this.llmService.routedQuery(request, true, res);
+      return;
+    }
+
+    // Check cache first
+    const cachedResult = await this.checkQueryCache(request.question);
+    if (cachedResult && request.use_cache !== false) {
+      return cachedResult;
+    }
+
+    // Process routed query without streaming
+    const result = await this.llmService.routedQuery(request, false, res);
+
+    // Handle the case where result might be void (streaming case)
+    if (!result) {
+      return;
+    }
+
+    // Convert RoutedQueryResponse to CachedQueryResponse
+    const cachedResponse: CachedQueryResponse = {
+      question: result.question,
+      answer: result.answer,
+      sources: result.sources,
+      metadata: {
+        total_sources: result.metadata.total_sources,
+        search_time_ms: result.metadata.search_time_ms,
+        cached: false,
+        model_used: result.metadata.model_used,
+        confidence: result.metadata.confidence,
+        intent: result.intent,
+        method_used: result.method_used,
       },
     };
 

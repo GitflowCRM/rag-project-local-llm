@@ -192,3 +192,120 @@ You are an AI assistant helping filter and shortlist user profiles based on meta
   \`\`\`
 
 `;
+
+export const INTENT_DETECTION_PROMPT = (question: string) => `
+You are an intent classifier for a user analytics system. Analyze the user's question and determine the intent and required parameters.
+
+Available intents and methods:
+1. "count_users" - Count total users or users matching specific criteria
+2. "list_users" - Get a list of users with specific characteristics
+3. "find_ios_users" - Find users using iOS devices
+4. "find_android_users" - Find users using Android devices
+5. "find_mobile_users" - Find users on mobile devices
+6. "find_desktop_users" - Find users on desktop devices
+7. "find_users_by_location" - Find users by country/city
+8. "find_active_users" - Find recently active users
+9. "find_inactive_users" - Find inactive users
+10. "find_cart_abandoners" - Find users who abandoned their cart
+11. "find_converted_users" - Find users who completed purchases
+12. "general_query" - General analysis questions
+
+Question: "${question}"
+
+Extract parameters like:
+- device_type: "ios", "android", "mobile", "desktop"
+- location: country or city name
+- time_period: "last_24h", "last_7d", "last_30d", "all_time"
+- activity_type: "active", "inactive", "cart_abandoned", "converted"
+
+IMPORTANT: Return ONLY the JSON object below. Do NOT include markdown formatting, code blocks, or any other text.
+
+{
+  "intent": "intent_name",
+  "confidence": 0.95,
+  "parameters": {
+    "device_type": "ios",
+    "location": "UAE",
+    "time_period": "last_7d"
+  },
+  "method": "method_name"
+}`;
+
+export const COUNT_USERS_SUMMARY_PROMPT = ({
+  question,
+  context,
+  count,
+}: {
+  question: string;
+  context: string;
+  count: number;
+}) => `
+You are analyzing user data to answer a counting question.
+
+Question: "${question}"
+
+User Data Context:
+${context}
+
+Raw Count: ${count} unique users
+
+Please provide a natural, conversational answer that:
+1. States the count clearly
+2. Mentions any relevant filters (device type, location, time period)
+3. Provides context about the user base
+4. Is helpful and informative
+
+Answer:`;
+
+export const FIND_IOS_USERS_SUMMARY_PROMPT = ({
+  question,
+  context,
+  count,
+}: {
+  question: string;
+  context: string;
+  count: number;
+}) => `
+You are analyzing user data to find iOS users.
+
+Question: "${question}"
+
+User Data Context:
+${context}
+
+Raw Count: ${count} iOS users found
+
+Please provide a natural, conversational answer that:
+1. States the count of iOS users clearly
+2. Mentions any relevant filters (location, time period)
+3. Provides insights about the iOS user base
+4. Is helpful and informative
+
+Answer:`;
+
+export const LIST_USERS_SUMMARY_PROMPT = ({
+  question,
+  context,
+  count,
+}: {
+  question: string;
+  context: string;
+  count: number;
+}) => `
+You are analyzing user data to list users.
+
+Question: "${question}"
+
+User Data Context:
+${context}
+
+Total Users Found: ${count}
+
+Please provide a natural, conversational answer that:
+1. States the number of users found
+2. Mentions any relevant filters (device type, location, activity type)
+3. Provides insights about the user base
+4. Is helpful and informative
+5. Avoids listing individual user IDs unless specifically requested
+
+Answer:`;
