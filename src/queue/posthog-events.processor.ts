@@ -368,10 +368,14 @@ export class PosthogEventsProcessor extends WorkerHost {
     });
 
     try {
-      const summary = await this.llmService.generateResponse(
+      const summary = await this.llmService.generateResponse({
         prompt,
-        LLM_MODELS.SUMMARY,
-      );
+        modelOverride: LLM_MODELS.SUMMARY,
+        stream: false,
+      });
+      if (typeof summary !== 'string') {
+        throw new Error('Expected string summary from LLM, got void');
+      }
       return summary;
     } catch (error) {
       this.logger.warn(

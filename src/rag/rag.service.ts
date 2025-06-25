@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { EventsService } from '../events/events.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { LlmService } from '../llm/llm.service';
+import { LLM_MODELS } from 'src/queue/const';
 
 @Injectable()
 export class RagService {
@@ -52,7 +53,14 @@ Question: ${question}
 
 Answer:`;
 
-    const answer = await this.llmService.generateResponse(prompt);
+    const answer = await this.llmService.generateResponse({
+      prompt,
+      modelOverride: LLM_MODELS.REASONING,
+      stream: false,
+    });
+    if (typeof answer !== 'string') {
+      throw new Error('Expected string answer from LLM, got void');
+    }
     return { answer };
   }
 

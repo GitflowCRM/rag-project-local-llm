@@ -4,7 +4,8 @@ import axios from 'axios';
 import { QdrantService } from '../qdrant/qdrant.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { LLM_MODELS } from '../queue/const';
-import { DATA_ANALYSIS_PROMPT } from 'src/prompts';
+import { FILTER_USERS_BY_TRAITS_PROMPT } from 'src/prompts';
+import { Response } from 'express';
 
 interface LLMResponse {
   choices: Array<{
@@ -86,21 +87,25 @@ export class LlmService {
     this.maxTokens = this.configService.get<number>('LLM_MAX_TOKENS') || 4096;
   }
 
-  async generateResponse(
-    prompt: string,
-    modelOverride?: string,
-  ): Promise<string> {
+  async generateResponse({
+    prompt,
+    modelOverride,
+    stream,
+    res,
+  }: {
+    prompt: string;
+    modelOverride?: string;
+    stream: boolean;
+    res?: Response;
+  }): Promise<string | void> {
     try {
       const modelToUse = modelOverride || this.model;
-
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-
       if (this.apiKey) {
         headers['Authorization'] = `Bearer ${this.apiKey}`;
       }
-
       this.logger.log(`Calling LLM with question: ${prompt}`);
       const promptLength = prompt.length;
       this.logger.log(`Prompt length: ${promptLength}`);
@@ -109,33 +114,77 @@ export class LlmService {
         throw new Error('Prompt length is too long');
       }
 
-      const response = await axios.post<LLMResponse>(
-        `${this.apiUrl}/chat/completions`,
-        {
-          model: modelToUse,
-          temperature: Number(this.temperature),
-          stream: false,
-          max_tokens: Number(this.maxTokens),
-          messages: [
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-        },
-        {
+      if (stream) {
+        // Use fetch for streaming
+        const fetchResponse = await fetch(`${this.apiUrl}/chat/completions`, {
+          method: 'POST',
           headers,
-        },
-      );
-
-      return response.data.choices[0].message.content;
+          body: JSON.stringify({
+            model: modelToUse,
+            temperature: Number(this.temperature),
+            stream: true,
+            max_tokens: Number(this.maxTokens),
+            messages: [
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+          }),
+        });
+        if (!fetchResponse.body)
+          throw new Error('No response body for streaming');
+        const reader = fetchResponse.body.getReader();
+        let done = false;
+        // accumulator for the message and always write to the response
+        let aiChatMessage = '';
+        while (!done) {
+          const { value, done: streamDone } = await reader.read();
+          if (value) {
+            const chunk = Buffer.from(value).toString('utf8');
+            this.logger.log(`[LLM Stream] ${chunk}`);
+            if (res) res.write(chunk);
+            aiChatMessage += chunk;
+          }
+          done = streamDone;
+        }
+        this.logger.log(`[LLM Stream] Final message: ${aiChatMessage}`);
+        if (res) res.write(aiChatMessage);
+        if (res) res.end();
+        return;
+      } else {
+        // Non-streaming: use axios
+        const response = await axios.post<LLMResponse>(
+          `${this.apiUrl}/chat/completions`,
+          {
+            model: modelToUse,
+            temperature: Number(this.temperature),
+            stream: false,
+            max_tokens: Number(this.maxTokens),
+            messages: [
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+          },
+          {
+            headers,
+          },
+        );
+        return response.data.choices[0].message.content;
+      }
     } catch (error) {
       console.error('Error calling LLM:', error);
       throw new Error('Failed to generate response from LLM');
     }
   }
 
-  async queryPosthogEvents(request: QueryRequest): Promise<QueryResponse> {
+  async queryPosthogEvents(
+    request: QueryRequest,
+    stream: boolean,
+    res: Response,
+  ): Promise<QueryResponse> {
     const startTime = Date.now();
     // 1. Generate embedding for the query
     const queryEmbedding = await this.embeddingsService.generateEmbedding(
@@ -162,33 +211,18 @@ export class LlmService {
     // 3. Prepare context from search results
     const context = this.prepareContext(searchResults.result);
     // 4. Generate LLM response with model selection based on query complexity
-    const prompt = DATA_ANALYSIS_PROMPT(context);
-    const answer = await this.generateResponse(prompt, LLM_MODELS.REASONING);
-    // 5. Format sources for response (minimal fields only)
-    const sources = searchResults.result
-      .slice(0, request.top_k || 3)
-      .map((result) => {
-        const payload = result.payload as unknown as PosthogEventPayload;
-        let summary = payload.summary || 'No summary available';
-        if (summary.length > 150) {
-          summary = summary.substring(0, 147) + '...';
-        }
-        return {
-          person_id: payload.person_id,
-          score: result.score,
-          summary,
-        };
-      });
-    return {
+    // const prompt = DATA_ANALYSIS_PROMPT(context);
+    const prompt = FILTER_USERS_BY_TRAITS_PROMPT({
       question: request.question,
-      answer,
-      sources,
-      metadata: {
-        total_sources: sources.length,
-        search_time_ms: Date.now() - startTime,
-        model_used: LLM_MODELS.REASONING,
-      },
-    };
+      userProfiles: context,
+    });
+    await this.generateResponse({
+      prompt,
+      modelOverride: LLM_MODELS.REASONING,
+      stream,
+      res,
+    });
+    return;
   }
 
   private selectModelForQuery(

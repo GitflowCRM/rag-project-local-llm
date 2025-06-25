@@ -1,70 +1,3 @@
-// export const USER_SUMMARY_PROMPT = ({
-//   question,
-//   person_id,
-//   userData,
-// }: {
-//   question: string;
-//   person_id: string;
-//   userData: string;
-// }) => `
-// You are a senior analytics expert. Given the user's event and metadata log, extract meaningful structured metadata and provide a concise behavioral summary.
-
-// ---
-
-// **Question:** ${question}
-// **User ID:** ${person_id}
-
-// **User Logs (events + metadata):**
-// ${userData}
-
-// ---
-
-// ### 1. Metadata (as key-value JSON)
-
-// Extract only the most relevant fields. Avoid duplicating values or including nulls. Output example:
-
-// \`\`\`json
-// {
-//   "deviceType": "Mobile",
-//   "os": "iOS",
-//   "osVersion": "18.3.1",
-//   "appVersion": "2.0.1",
-//   "deviceModel": "iPhone 14",
-//   "manufacturer": "Apple",
-//   "screenSize": "390x844",
-//   "geo": {
-//     "country": "United Arab Emirates",
-//     "city": "Sharjah",
-//     "timezone": "Asia/Dubai"
-//   },
-//   "email": "user@example.com",
-//   "name": "Muneer P.",
-//   "emailVerified": false,
-//   "language": "English",
-//   "cartActivity": "Added | Cleared | Abandoned | None",
-//   "featureFlagsUsed": ["MY_SHOP_DOMAIN"],
-//   "userType": "Power Shopper | First-time User | Abandoner",
-//   "vendorId": "gid://shopify/Shop/123456789",
-//   "shopDomain": "mybrand.myshopify.com",
-//   "sessionFrequency": "e.g. 3 sessions in 2 days",
-//   "lastActivityAt": "2025-06-20T12:34:56Z"
-// }
-// \`\`\`
-
-// ---
-
-// ### 2. Behavioral Summary (max 500 words)
-
-// Describe the user’s key behaviors, device/app usage, purchase intent, session patterns, and any outliers (e.g., crash loops, abandoned carts, new feature exploration).
-
-// Create an array of tags for classifications
-// ["segment1" , "segment2" , "segment3" ]
-
-// ---
-
-// Return **only** the above two sections.
-// `;
-
 export const USER_SUMMARY_PROMPT = ({
   question,
   person_id,
@@ -113,13 +46,13 @@ Extract meaningful behavioral signals from the event data such as:
 - conversionLikely: boolean (based on signals like checkout_started, multiple reactivations)
 
 You may add **any other metadata fields** that would help us answer future questions like:
-- “Which users explored but didn’t buy?”
-- “Who enabled push notifications but churned?”
-- “Who spent the most time in app?”
+- "Which users explored but didn't buy?"
+- "Who enabled push notifications but churned?"
+- "Who spent the most time in app?"
 
 #### 2. Behavioral Summary (max 40 words)
 
-Write a short natural-language summary of this user’s activity.
+Write a short natural-language summary of this user's activity.
 
 ---
 
@@ -198,4 +131,64 @@ ${contextString}  // inject your formatted "User Profile 1... User Profile 2..."
   }
 ]
 \`\`\`
+`;
+
+export const FILTER_USERS_BY_TRAITS_PROMPT = ({
+  question,
+  userProfiles,
+}: {
+  question: string;
+  userProfiles: string;
+}) => `
+You are an AI assistant helping filter and shortlist user profiles based on metadata and behavior logs.
+  
+  ---
+  
+  **Question:** ${question}
+  
+  **User Metadata Samples:**
+  Each block below contains a user's flattened metadata (device, location, traits, etc.) and optionally a summary of recent behavior.
+  
+  ${userProfiles}
+  
+  ---
+  
+  ### Instructions:
+  
+  1. **Understand the question** and identify any filtering conditions such as:
+     - Country or city (e.g., "from UAE")
+     - Device or platform (e.g., "has iPhone")
+     - Behavioral or session traits (e.g., "active", "abandoned cart", "used search")
+  
+  2. **Select the top 3 matching users** based on exact or strong partial matches.
+     - You may include inferred matches if metadata is suggestive but not explicit (e.g., deviceModel includes "iPhone").
+  
+  3. For each selected user, return:
+     - person_id
+     - A short explanation why the user matches the question (mention device, country, etc.)
+  
+  4. If no users match, return an empty array.
+  
+  ---
+  
+  ### Final Output Format:
+  Return only the JSON block below.
+
+  \`\`\`json
+  [
+    {
+      "person_id": "abc-123",
+      "reason": "User is from UAE and uses iPhone 14"
+    },
+    {
+      "person_id": "def-456",
+      "reason": "iPhone user located in Dubai, UAE"
+    },
+    {
+      "person_id": "ghi-789",
+      "reason": "iPhone 13 user in UAE with recent activity"
+    }
+  ]
+  \`\`\`
+
 `;

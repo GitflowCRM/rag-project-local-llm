@@ -13,6 +13,7 @@ import { Repository, IsNull } from 'typeorm';
 import { Event } from '../events/entities/event.entity';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { LlmService } from '../llm/llm.service';
+import { LLM_MODELS } from 'src/queue/const';
 
 interface QdrantPoint {
   id: number;
@@ -382,7 +383,15 @@ Question: ${query}
 Answer:`;
 
       // 4. Get answer from LLM
-      const answer = await this.llmService.generateResponse(prompt);
+      const answer = await this.llmService.generateResponse({
+        prompt,
+        modelOverride: LLM_MODELS.REASONING,
+        stream: false,
+      });
+
+      if (typeof answer !== 'string') {
+        throw new Error('Expected string answer from LLM, got void');
+      }
 
       return {
         query,
