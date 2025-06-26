@@ -1,11 +1,16 @@
-import { Entity, Column, PrimaryColumn, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  CreateDateColumn,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 
 @Entity('posthog_events')
 export class PosthogEvent {
-  @PrimaryColumn('uuid')
-  uuid: string;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
-  @Column('text')
+  @Column('varchar', { nullable: true })
   event: string;
 
   @Column('jsonb', { nullable: true })
@@ -14,8 +19,8 @@ export class PosthogEvent {
   @Column('jsonb', { nullable: true })
   person_properties: Record<string, any>;
 
-  @Column('jsonb', { nullable: true })
-  elements_chain: Record<string, any>;
+  @Column('text', { nullable: true })
+  elements_chain: string;
 
   @Column('jsonb', { nullable: true })
   set: Record<string, any>;
@@ -23,11 +28,14 @@ export class PosthogEvent {
   @Column('jsonb', { nullable: true })
   set_once: Record<string, any>;
 
-  @Column('uuid', { nullable: true })
+  @Column('varchar', { nullable: true })
   distinct_id: string;
 
-  @Column('uuid', { nullable: true })
+  @Column('varchar', { nullable: true })
   person_id: string;
+
+  @Column('varchar', { nullable: true })
+  uuid: string;
 
   @CreateDateColumn({ type: 'timestamp', nullable: true })
   created_at: Date;
@@ -35,7 +43,7 @@ export class PosthogEvent {
   @Column({ type: 'timestamp', nullable: true })
   _inserted_at: Date;
 
-  @Column('text', { nullable: true })
+  @Column('varchar', { nullable: true })
   ip: string;
 
   @Column({ type: 'timestamp', nullable: true })
@@ -47,11 +55,11 @@ export class PosthogEvent {
   @Column({ type: 'timestamp', nullable: true })
   updatedAt: Date;
 
-  @Column('text', { nullable: true })
+  @Column('varchar', { nullable: true })
   vendor_id: string;
 
-  @Column('text', { nullable: true })
-  shopdomain: string;
+  @Column('varchar', { name: 'shopDomain', nullable: true })
+  shopDomain: string;
 
   @Column({ type: 'timestamp', nullable: true })
   ingested_at: Date;

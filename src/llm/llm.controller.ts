@@ -1,8 +1,9 @@
-import { Controller, Post, Body, Get } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { LlmService } from './llm.service';
 import { QdrantService } from '../qdrant/qdrant.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
-import { ApiTags, ApiOperation, ApiBody, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { randomUUID } from 'crypto';
 import { LLM_MODELS } from '../queue/const';
 
@@ -41,6 +42,9 @@ interface CachedQueryResponse {
     cache_hit_score?: number;
     model_used?: string;
     improved?: boolean;
+    confidence?: number;
+    intent?: string;
+    method_used?: string;
   };
 }
 
@@ -57,120 +61,29 @@ export class LlmController {
   @ApiOperation({
     summary: 'Query PostHog user events using LLM and Qdrant with caching',
   })
-  @ApiBody({
-    description: 'Query for user activity with caching support',
-    schema: {
-      type: 'object',
-      properties: {
-        question: {
-          type: 'string',
-          example: 'How many users placed an order in the last 24 hours?',
-        },
-        top_k: { type: 'number', example: 3 },
-        model_override: {
-          type: 'string',
-          example: 'microsoft/phi-4-reasoning-plus',
-        },
-        use_cache: { type: 'boolean', example: true },
-        filters: {
-          type: 'object',
-          properties: {
-            person_id: { type: 'string', example: 'user-123' },
-            vendor_id: { type: 'string', example: 'vendor-456' },
-            shop_domain: { type: 'string', example: 'shop.example.com' },
-            event_types: {
-              type: 'array',
-              items: { type: 'string' },
-              example: ['purchase', 'login'],
-            },
-            time_range: {
-              type: 'object',
-              properties: {
-                start: {
-                  type: 'string',
-                  format: 'date-time',
-                  example: '2024-06-01T00:00:00Z',
-                },
-                end: {
-                  type: 'string',
-                  format: 'date-time',
-                  example: '2024-06-02T00:00:00Z',
-                },
-              },
-            },
-          },
-        },
-      },
-      required: ['question'],
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'LLM-generated answer with caching information',
-    schema: {
-      type: 'object',
-      properties: {
-        question: { type: 'string' },
-        answer: { type: 'string' },
-        sources: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              person_id: { type: 'string' },
-              event_count: { type: 'number' },
-              event_types: { type: 'array', items: { type: 'string' } },
-              time_span: { type: 'string' },
-              summary: { type: 'string' },
-              score: { type: 'number' },
-            },
-          },
-        },
-        metadata: {
-          type: 'object',
-          properties: {
-            total_sources: { type: 'number' },
-            search_time_ms: { type: 'number' },
-            cached: { type: 'boolean' },
-            cache_hit_score: { type: 'number' },
-            model_used: { type: 'string' },
-            improved: { type: 'boolean' },
-          },
-        },
-      },
-    },
-  })
   async queryPosthogEvents(
     @Body() request: QueryRequest,
-  ): Promise<CachedQueryResponse> {
-    const startTime = Date.now();
-    const useCache = request.use_cache !== false; // Default to true
+    @Query('stream') stream?: string,
+    @Res() res?: Response,
+  ): Promise<CachedQueryResponse | void> {
+    if (stream === 'true' && res) {
+      // Set OpenAI-style streaming headers
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
-    // Check cache first if enabled
-    if (useCache) {
-      const cachedResult = await this.checkQueryCache(request.question);
-      if (cachedResult) {
-        // Improve the cached response using a summary model
-        const improvedAnswer = await this.improveCachedResponse(
-          request.question,
-          cachedResult.answer,
-        );
-
-        return {
-          ...cachedResult,
-          answer: improvedAnswer,
-          metadata: {
-            ...cachedResult.metadata,
-            cached: true,
-            search_time_ms: Date.now() - startTime,
-            improved: true,
-          },
-        };
-      }
+      // Process query normally
+      await this.llmService.queryPosthogEvents(request, true, res);
+      return;
     }
 
     // Process query normally
-    const result = await this.llmService.queryPosthogEvents(request);
+    const result = await this.llmService.queryPosthogEvents(
+      request,
+      false,
+      res,
+    );
 
     // Convert QueryResponse to CachedQueryResponse
     const cachedResponse: CachedQueryResponse = {
@@ -196,6 +109,62 @@ export class LlmController {
     return cachedResponse;
   }
 
+  @Post('routed-query')
+  @ApiOperation({
+    summary:
+      'Query PostHog user events using NLP intent detection and method routing',
+  })
+  async routedQuery(
+    @Body() request: QueryRequest,
+    @Query('stream') stream?: string,
+    @Res() res?: Response,
+  ): Promise<CachedQueryResponse | void> {
+    if (stream === 'true' && res) {
+      // Set OpenAI-style streaming headers
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+      // Process routed query with streaming
+      await this.llmService.routedQuery(request, true, res);
+      return;
+    }
+
+    // Check cache first
+    const cachedResult = await this.checkQueryCache(request.question);
+    if (cachedResult && request.use_cache !== false) {
+      return cachedResult;
+    }
+
+    // Process routed query without streaming
+    const result = await this.llmService.routedQuery(request, false, res);
+
+    // Handle the case where result might be void (streaming case)
+    if (!result) {
+      return;
+    }
+
+    // Convert RoutedQueryResponse to CachedQueryResponse
+    const cachedResponse: CachedQueryResponse = {
+      question: result.question,
+      answer: result.answer,
+      sources: result.sources,
+      metadata: {
+        total_sources: result.metadata.total_sources,
+        search_time_ms: result.metadata.search_time_ms,
+        cached: false,
+        model_used: result.metadata.model_used,
+        confidence: result.metadata.confidence,
+        intent: result.intent,
+        method_used: result.method_used,
+      },
+    };
+
+    await this.cacheQueryResult(request.question, cachedResponse);
+    return cachedResponse;
+  }
+
   private async checkQueryCache(
     question: string,
   ): Promise<CachedQueryResponse | null> {
@@ -205,11 +174,11 @@ export class LlmController {
         await this.embeddingsService.generateEmbedding(question);
 
       // Search for similar cached queries
-      const searchResults = await this.qdrantService.search(
-        'query_cache',
-        queryEmbedding,
-        1, // Get the most similar cached query
-      );
+      const searchResults = await this.qdrantService.search({
+        collection: 'query_cache',
+        vector: queryEmbedding,
+        top: 1, // Get the most similar cached query
+      });
 
       if (searchResults.result && searchResults.result.length > 0) {
         const bestMatch = searchResults.result[0];
@@ -249,9 +218,9 @@ export class LlmController {
   private async improveCachedResponse(
     question: string,
     cachedAnswer: string,
-  ): Promise<string> {
-    try {
-      const prompt = `You are an expert at improving and refining answers. The user asked: "${question}"
+    res: Response,
+  ): Promise<void> {
+    const prompt = `You are an expert at improving and refining answers. The user asked: "${question}"
 
 Here is a cached answer that was previously generated:
 "${cachedAnswer}"
@@ -265,19 +234,13 @@ Please improve this answer by:
 
 Provide an improved version of the answer:`;
 
-      const improvedAnswer = await this.llmService.generateResponse(
-        prompt,
-        LLM_MODELS.SUMMARY, // Use fast summary model
-      );
-
-      return improvedAnswer;
-    } catch (error) {
-      console.warn(
-        'Failed to improve cached response, returning original:',
-        error,
-      );
-      return cachedAnswer; // Fallback to original cached answer
-    }
+    await this.llmService.generateResponse({
+      prompt,
+      modelOverride: LLM_MODELS.SUMMARY,
+      stream: true,
+      res,
+    });
+    // No return value needed, streaming handled by service
   }
 
   private async cacheQueryResult(

@@ -1,10 +1,9 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { EventsModule } from './events/events.module';
-import { RagModule } from './rag/rag.module';
 import { EmbeddingsModule } from './embeddings/embeddings.module';
 import { LlmModule } from './llm/llm.module';
 import { DataSource } from 'typeorm';
@@ -12,6 +11,7 @@ import { WithLengthColumnType } from 'typeorm/driver/types/ColumnTypes';
 import { QdrantModule } from './qdrant/qdrant.module';
 import { QueueModule } from './queue/queue.module';
 
+@Global()
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -49,7 +49,6 @@ import { QueueModule } from './queue/queue.module';
     }),
     QueueModule,
     EventsModule,
-    RagModule,
     EmbeddingsModule,
     LlmModule,
     QdrantModule,

@@ -23,7 +23,12 @@
     "migration:generate": "bun run typeorm migration:generate src/migrations/InitEventsTable",
     "typeorm:schema:sync": "npx typeorm-ts-node-commonjs schema:sync -d src/data-source.ts",
     "migration:run": "bun run typeorm migration:run",
-    "migration:revert": "bun run typeorm migration:revert"
+    "migration:revert": "bun run typeorm migration:revert",
+    "backup:db": "bun run --bun scripts/backup-db.ts",
+    "backup:db:docker": "bun run --bun scripts/backup-db-docker.ts",
+    "restore:db": "bun run --bun scripts/restore-db.ts",
+    "restore:db:docker": "bun run --bun scripts/restore-db-docker.ts",
+    "test:scripts": "bun run --bun scripts/test-runner.ts"
   },
   "dependencies": {
     "@bull-board/api": "^6.10.1",

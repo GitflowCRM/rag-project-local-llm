@@ -2,9 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThanOrEqual } from 'typeorm';
 import { PosthogEvent } from './entities/posthog-event.entity';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class PosthogEventsService {
+  private readonly logger = new Logger(PosthogEventsService.name);
   constructor(
     @InjectRepository(PosthogEvent)
     private readonly posthogEventRepository: Repository<PosthogEvent>,
@@ -36,7 +38,6 @@ export class PosthogEventsService {
       uuid: event.uuid,
       person_id: event.person_id,
       vendor_id: event.vendor_id,
-      shopdomain: event.shopdomain,
       ...flattenedProps,
     };
 
@@ -87,7 +88,7 @@ export class PosthogEventsService {
     // Group related fields together
     const groups = {
       event: ['event_type', 'timestamp', 'uuid', 'person_id'],
-      vendor: ['vendor_id', 'shopdomain'],
+      vendor: ['vendor_id'],
       device: [
         'properties_$device_name',
         'properties_$device_type',
@@ -289,23 +290,28 @@ export class PosthogEventsService {
       .limit(userLimit);
 
     // Then get all events for those users
-    const events = await this.posthogEventRepository
-      .createQueryBuilder('event')
-      .where('event.ingested_at IS NULL')
-      .andWhere(
-        'event.person_id IN (SELECT DISTINCT person_id FROM (' +
-          userSubquery.getQuery() +
-          ') AS subq)',
-      )
-      .setParameters(userSubquery.getParameters())
-      .andWhere('event.created_at >= :date', {
-        date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      })
-      .andWhere("event.person_properties->>'email' IS NOT NULL")
-      .andWhere("event.person_properties->>'email' != ''")
-      .orderBy('event.timestamp', 'DESC')
-      .limit(30)
-      .getMany();
+    let events: PosthogEvent[] = [];
+    try {
+      events = await this.posthogEventRepository
+        .createQueryBuilder('event')
+        .where('event.ingested_at IS NULL')
+        .andWhere(
+          'event.person_id IN (SELECT DISTINCT person_id FROM (' +
+            userSubquery.getQuery() +
+            ') AS subq)',
+        )
+        .setParameters(userSubquery.getParameters())
+        .andWhere('event.created_at >= :date', {
+          date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        })
+        .andWhere("event.person_properties->>'email' IS NOT NULL")
+        .andWhere("event.person_properties->>'email' != ''")
+        .orderBy('event.timestamp', 'DESC')
+        .limit(30)
+        .getMany();
+    } catch (error) {
+      console.error(error);
+    }
 
     // Group by person_id and include person_properties
     const groupedEvents = new Map<
@@ -337,11 +343,11 @@ export class PosthogEventsService {
         .createQueryBuilder('event')
         .where('event.ingested_at IS NULL')
         .andWhere('event.person_id = :person_id', { person_id })
-        .orderBy('event.timestamp', 'ASC')
+        .orderBy('event.created_at', 'ASC')
         // for last 7 days
-        .andWhere('event.created_at >= :date', {
-          date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-        })
+        // .andWhere('event.created_at >= :date', {
+        //   date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        // })
         .limit(30)
         .getMany()
     );
@@ -518,5 +524,48 @@ export class PosthogEventsService {
       ingestedEvents,
       uningestedEvents,
     };
+  }
+
+  // Find unique users with uningested events (simple approach)
+  async findUniqueUsersWithUningestedEvents(
+    userLimit: number,
+  ): Promise<string[]> {
+    const distinctUsers = await this.posthogEventRepository
+      .createQueryBuilder('event')
+      .select('DISTINCT event.person_id')
+      .where('event.ingested_at IS NULL')
+      .andWhere('event.person_id IS NOT NULL')
+      .orderBy('event.person_id', 'ASC')
+      .limit(userLimit)
+      .getRawMany();
+
+    return distinctUsers
+      .map((user: { person_id: string }) => user.person_id)
+      .filter(
+        (personId): personId is string =>
+          personId !== null && personId !== undefined,
+      );
+  }
+
+  // Mark all uningested events for a user as ingested
+  async markAllUserEventsAsIngested(person_id: string): Promise<void> {
+    try {
+      await this.posthogEventRepository
+        .createQueryBuilder()
+        .update()
+        .set({ ingested_at: new Date() })
+        .where('person_id = :person_id', { person_id })
+        .andWhere('ingested_at IS NULL')
+        .execute();
+
+      this.logger.log(
+        `Marked all uningested events for user ${person_id} as ingested`,
+      );
+    } catch (error) {
+      this.logger.log(
+        `Error marking all uningested events for user ${person_id} as ingested`,
+      );
+      this.logger.log(error);
+    }
   }
 }

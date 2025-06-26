@@ -57,4 +57,16 @@ export class QueueEventsService {
     );
     return { status: 'queued', person_id };
   }
+
+  async queueFindUniqueUsersJob({
+    batchSize,
+  }: {
+    batchSize: number;
+  }): Promise<{ status: string; batchSize: number }> {
+    await this.posthogEventsQueue.add(
+      QUEUE_PROCESSORS.POSTHOG_EVENTS.FIND_UNIQUE_USERS,
+      { batchSize },
+    );
+    return { status: 'queued', batchSize };
+  }
 }

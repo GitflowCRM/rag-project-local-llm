@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { QueueEventsService } from './queue-events.service';
 import { EventsSyncProcessor } from './events-sync.processor';
 import { PosthogEventsProcessor } from './posthog-events.processor';
@@ -32,10 +32,10 @@ import { QUEUE_NAMES } from './const';
     EventsModule,
     QdrantModule,
     EmbeddingsModule,
-    LlmModule,
+    forwardRef(() => LlmModule),
   ],
   controllers: [QueueEventsController],
   providers: [QueueEventsService, EventsSyncProcessor, PosthogEventsProcessor],
-  exports: [BullModule],
+  exports: [BullModule, QueueEventsService],
 })
 export class QueueModule {}

@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
-import { IngestionAttempt, IngestionStatus, FailureReason } from './entities/ingestion-attempt.entity';
+import {
+  IngestionAttempt,
+  IngestionStatus,
+  FailureReason,
+} from './entities/ingestion-attempt.entity';
 
 @Injectable()
 export class IngestionAttemptsService {
@@ -34,11 +38,14 @@ export class IngestionAttemptsService {
     });
   }
 
-  async markAsSuccess(attemptId: string, data: {
-    events_processed: number;
-    processing_time_ms?: number;
-    metadata?: Record<string, any>;
-  }): Promise<void> {
+  async markAsSuccess(
+    attemptId: string,
+    data: {
+      events_processed: number;
+      processing_time_ms?: number;
+      metadata?: Record<string, any>;
+    },
+  ): Promise<void> {
     await this.ingestionAttemptRepository.update(attemptId, {
       status: IngestionStatus.SUCCESS,
       events_processed: data.events_processed,
@@ -50,12 +57,15 @@ export class IngestionAttemptsService {
     });
   }
 
-  async markAsFailed(attemptId: string, data: {
-    failure_reason: FailureReason;
-    error_message: string;
-    error_details?: Record<string, any>;
-    events_processed?: number;
-  }): Promise<void> {
+  async markAsFailed(
+    attemptId: string,
+    data: {
+      failure_reason: FailureReason;
+      error_message: string;
+      error_details?: Record<string, any>;
+      events_processed?: number;
+    },
+  ): Promise<void> {
     await this.ingestionAttemptRepository.update(attemptId, {
       status: IngestionStatus.FAILED,
       failure_reason: data.failure_reason,
@@ -66,13 +76,16 @@ export class IngestionAttemptsService {
     });
   }
 
-  async markAsPartial(attemptId: string, data: {
-    events_processed: number;
-    events_total: number;
-    failure_reason: FailureReason;
-    error_message: string;
-    error_details?: Record<string, any>;
-  }): Promise<void> {
+  async markAsPartial(
+    attemptId: string,
+    data: {
+      events_processed: number;
+      events_total: number;
+      failure_reason: FailureReason;
+      error_message: string;
+      error_details?: Record<string, any>;
+    },
+  ): Promise<void> {
     await this.ingestionAttemptRepository.update(attemptId, {
       status: IngestionStatus.PARTIAL,
       events_processed: data.events_processed,
@@ -96,7 +109,9 @@ export class IngestionAttemptsService {
     });
   }
 
-  async getFailedAttemptsByPersonId(person_id: string): Promise<IngestionAttempt[]> {
+  async getFailedAttemptsByPersonId(
+    person_id: string,
+  ): Promise<IngestionAttempt[]> {
     return this.ingestionAttemptRepository.find({
       where: {
         person_id,
@@ -129,12 +144,15 @@ export class IngestionAttemptsService {
 
     if (attempt) {
       const newRetryCount = attempt.retry_count + 1;
-      const nextRetryAt = new Date(Date.now() + Math.pow(2, newRetryCount) * 60000); // Exponential backoff
+      const nextRetryAt = new Date(
+        Date.now() + Math.pow(2, newRetryCount) * 60000,
+      ); // Exponential backoff
 
       await this.ingestionAttemptRepository.update(attemptId, {
         retry_count: newRetryCount,
         next_retry_at: newRetryCount < 3 ? nextRetryAt : null,
-        status: newRetryCount >= 3 ? IngestionStatus.FAILED : IngestionStatus.PENDING,
+        status:
+          newRetryCount >= 3 ? IngestionStatus.FAILED : IngestionStatus.PENDING,
       });
     }
   }
@@ -148,14 +166,25 @@ export class IngestionAttemptsService {
     partial: number;
     byFailureReason: Record<string, number>;
   }> {
-    const [total, pending, processing, success, failed, partial] = await Promise.all([
-      this.ingestionAttemptRepository.count(),
-      this.ingestionAttemptRepository.count({ where: { status: IngestionStatus.PENDING } }),
-      this.ingestionAttemptRepository.count({ where: { status: IngestionStatus.PROCESSING } }),
-      this.ingestionAttemptRepository.count({ where: { status: IngestionStatus.SUCCESS } }),
-      this.ingestionAttemptRepository.count({ where: { status: IngestionStatus.FAILED } }),
-      this.ingestionAttemptRepository.count({ where: { status: IngestionStatus.PARTIAL } }),
-    ]);
+    const [total, pending, processing, success, failed, partial] =
+      await Promise.all([
+        this.ingestionAttemptRepository.count(),
+        this.ingestionAttemptRepository.count({
+          where: { status: IngestionStatus.PENDING },
+        }),
+        this.ingestionAttemptRepository.count({
+          where: { status: IngestionStatus.PROCESSING },
+        }),
+        this.ingestionAttemptRepository.count({
+          where: { status: IngestionStatus.SUCCESS },
+        }),
+        this.ingestionAttemptRepository.count({
+          where: { status: IngestionStatus.FAILED },
+        }),
+        this.ingestionAttemptRepository.count({
+          where: { status: IngestionStatus.PARTIAL },
+        }),
+      ]);
 
     // Get failure reasons breakdown
     const failureReasons = await this.ingestionAttemptRepository
@@ -190,4 +219,4 @@ export class IngestionAttemptsService {
       take: limit,
     });
   }
-} 
+}

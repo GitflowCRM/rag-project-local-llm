@@ -1,11 +1,5 @@
 import { Controller, Post, Body } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiBody,
-  ApiResponse,
-  ApiProperty,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiProperty } from '@nestjs/swagger';
 import { IsNumber, IsOptional, Min, Max } from 'class-validator';
 import { QueueEventsService } from './queue-events.service';
 
@@ -50,23 +44,6 @@ export class QueueEventsController {
     description:
       'Adds a job to the event sync queue to process unprocessed events in batches',
   })
-  @ApiBody({
-    type: QueueJobDto,
-    description: 'Job configuration with batch size',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Job successfully queued',
-    type: QueueJobResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid batch size provided',
-  })
-  @ApiResponse({
-    status: 500,
-    description: 'Internal server error while queuing job',
-  })
   async queueSyncJob(@Body() body: QueueJobDto): Promise<QueueJobResponseDto> {
     if (!body.batchSize) {
       body.batchSize = 100;
@@ -77,29 +54,6 @@ export class QueueEventsController {
   }
 
   @Post('queue-posthog-ingest-job')
-  @ApiOperation({
-    summary: 'Queue a PostHog events ingestion job',
-    description:
-      'Adds a job to the PostHog events queue to process and ingest PostHog events into the vector database',
-  })
-  @ApiBody({
-    type: QueueJobDto,
-    description:
-      'Job configuration with batch size (defaults to 3 for PostHog events)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'PostHog ingestion job successfully queued',
-    type: QueueJobResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid batch size provided',
-  })
-  @ApiResponse({
-    status: 500,
-    description: 'Internal server error while queuing job',
-  })
   async queuePosthogIngestJob(
     @Body() body: QueueJobDto,
   ): Promise<QueueJobResponseDto> {

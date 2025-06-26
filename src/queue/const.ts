@@ -15,6 +15,7 @@ export const QUEUE_PROCESSORS = {
   POSTHOG_EVENTS: {
     SYNC_POSTHOG_EVENTS: 'posthog-events.sync.posthog-events',
     FIND_USERS: 'posthog-events.find.users',
+    FIND_UNIQUE_USERS: 'posthog-events.find.unique.users',
     PROCESS_USER: 'posthog-events.process.user',
   },
   // String key aliases for dynamic access
@@ -27,6 +28,7 @@ export const QUEUE_PROCESSORS = {
   [QUEUE_NAMES.POSTHOG_EVENTS]: {
     SYNC_POSTHOG_EVENTS: 'posthog-events.sync.posthog-events',
     FIND_USERS: 'posthog-events.find.users',
+    FIND_UNIQUE_USERS: 'posthog-events.find.unique.users',
     PROCESS_USER: 'posthog-events.process.user',
   },
 };
@@ -37,5 +39,5 @@ export const LLM_MODELS = {
   REASONING: 'mistral-7b-instruct-v0.3',
   // REASONING: 'mistral-7b-instruct-v0.3',
   // REASONING: 'deepseek-r1-distill-qwen-7b',
-  SUMMARY: 'mistral-7b-instruct-v0.3',
+  SUMMARY: 'gemma-3-27b-it',
 };
