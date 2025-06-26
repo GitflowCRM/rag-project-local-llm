@@ -24,6 +24,7 @@ export class EventsSyncProcessor {
     const events = await this.eventsService.findUningestedEvents(batchSize);
     for (const event of events) {
       // Generate embedding and upsert to Qdrant
+      // TODO - generate summary of event data
       const embedding = await this.embeddingsService.generateEmbedding(
         JSON.stringify(event.event_data),
       );

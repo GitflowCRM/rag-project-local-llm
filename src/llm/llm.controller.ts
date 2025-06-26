@@ -174,11 +174,11 @@ export class LlmController {
         await this.embeddingsService.generateEmbedding(question);
 
       // Search for similar cached queries
-      const searchResults = await this.qdrantService.search(
-        'query_cache',
-        queryEmbedding,
-        1, // Get the most similar cached query
-      );
+      const searchResults = await this.qdrantService.search({
+        collection: 'query_cache',
+        vector: queryEmbedding,
+        top: 1, // Get the most similar cached query
+      });
 
       if (searchResults.result && searchResults.result.length > 0) {
         const bestMatch = searchResults.result[0];

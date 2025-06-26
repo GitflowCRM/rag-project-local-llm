@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { QdrantService } from '../qdrant/qdrant.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
+import { QueueEventsService } from '../queue/queue-events.service';
 import { LLM_MODELS } from '../queue/const';
 import {
   FILTER_USERS_BY_TRAITS_PROMPT,
@@ -12,6 +13,7 @@ import {
   LIST_USERS_SUMMARY_PROMPT,
   HELP_RESPONSE_PROMPT,
   GENERAL_QUERY_GUARDRAIL_PROMPT,
+  INGEST_EVENTS_PROMPT,
 } from 'src/prompts';
 import { Response } from 'express';
 
@@ -122,6 +124,152 @@ interface RoutedQueryResponse {
   };
 }
 
+interface QdrantMatchFilter {
+  key: string;
+  match: { value: string | number | boolean };
+}
+
+interface QdrantContainsFilter {
+  key: string;
+  match: {
+    any: string[] | number[] | boolean[];
+  };
+}
+
+interface QdrantRangeFilter {
+  key: string;
+  range: {
+    gte?: string | number;
+    lte?: string | number;
+  };
+}
+
+type QdrantFilter =
+  | QdrantMatchFilter
+  | QdrantContainsFilter
+  | QdrantRangeFilter;
+
+function buildQdrantFilter(
+  filters:
+    | Record<
+        string,
+        string | number | boolean | string[] | { start?: string; end?: string }
+      >
+    | undefined,
+): { must: QdrantFilter[] } | undefined {
+  if (!filters) return undefined;
+  const must: QdrantFilter[] = [];
+
+  for (const [key, value] of Object.entries(filters)) {
+    // Direct mapping for top-level fields from PostHog payload
+    if (
+      [
+        'person_id',
+        'event_count',
+        'first_event',
+        'last_event',
+        'time_span',
+      ].includes(key)
+    ) {
+      if (
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean'
+      ) {
+        const filter: QdrantMatchFilter = { key, match: { value } };
+        must.push(filter);
+      }
+    }
+    // Array fields that support "contains" filtering
+    else if (
+      ['event_types', 'vendor_ids', 'shop_domains'].includes(key) &&
+      Array.isArray(value)
+    ) {
+      const filter: QdrantContainsFilter = { key, match: { any: value } };
+      must.push(filter);
+    }
+    // For flattened_data fields, use dot notation
+    else if (key.startsWith('flattened_data.')) {
+      if (
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean'
+      ) {
+        const filter: QdrantMatchFilter = { key, match: { value } };
+        must.push(filter);
+      }
+    }
+    // For person_properties fields, use dot notation
+    else if (key.startsWith('person_properties.')) {
+      if (
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean'
+      ) {
+        const filter: QdrantMatchFilter = { key, match: { value } };
+        must.push(filter);
+      }
+    }
+    // Handle time range filtering using first_event and last_event
+    else if (
+      key === 'time_range' &&
+      typeof value === 'object' &&
+      value &&
+      !Array.isArray(value)
+    ) {
+      const timeRange = value as { start?: string; end?: string };
+      if (timeRange.start || timeRange.end) {
+        const rangeFilter: QdrantRangeFilter = {
+          key: 'first_event',
+          range: {},
+        };
+        if (timeRange.start) rangeFilter.range.gte = timeRange.start;
+        if (timeRange.end) rangeFilter.range.lte = timeRange.end;
+        must.push(rangeFilter);
+      }
+    }
+    // Handle event_count range filtering
+    else if (
+      key === 'event_count_range' &&
+      typeof value === 'object' &&
+      value &&
+      !Array.isArray(value)
+    ) {
+      const countRange = value as { min?: number; max?: number };
+      if (countRange.min !== undefined || countRange.max !== undefined) {
+        const rangeFilter: QdrantRangeFilter = {
+          key: 'event_count',
+          range: {},
+        };
+        if (countRange.min !== undefined)
+          rangeFilter.range.gte = countRange.min;
+        if (countRange.max !== undefined)
+          rangeFilter.range.lte = countRange.max;
+        must.push(rangeFilter);
+      }
+    }
+    // Default case for other fields
+    else if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      const filter: QdrantMatchFilter = { key, match: { value } };
+      must.push(filter);
+    }
+  }
+
+  return must.length ? { must } : undefined;
+}
+
+interface QdrantUserPayload {
+  person_id: string;
+  event_count: number;
+  event_types: string[];
+  time_span: string;
+  summary?: string;
+}
+
 @Injectable()
 export class LlmService {
   private readonly apiUrl: string;
@@ -134,6 +282,7 @@ export class LlmService {
     private readonly configService: ConfigService,
     private readonly qdrantService: QdrantService,
     private readonly embeddingsService: EmbeddingsService,
+    private readonly queueEventsService: QueueEventsService,
     private readonly logger: Logger,
   ) {
     this.apiUrl = this.configService.get<string>('LLM_API_URL') || '';
@@ -247,11 +396,11 @@ export class LlmService {
       request.question,
     );
     // 2. Search in Qdrant for relevant PostHog events
-    const searchResults = await this.qdrantService.search(
-      'posthog_events',
-      queryEmbedding,
-      request.top_k || 3, // Limit to 3 by default
-    );
+    const searchResults = await this.qdrantService.search({
+      collection: 'posthog_events',
+      vector: queryEmbedding,
+      top: request.top_k || 3, // Limit to 3 by default
+    });
     if (!searchResults.result || searchResults.result.length === 0) {
       return {
         question: request.question,
@@ -375,7 +524,7 @@ export class LlmService {
         const payload = result.payload as PosthogEventPayload;
         const meta: Record<string, any> = {};
         // Flattened metadata (if available)
-        if (payload.flattened_data) {
+        if (payload?.flattened_data) {
           for (const key of pickKeys) {
             if (
               payload.flattened_data[key] &&
@@ -498,14 +647,22 @@ export class LlmService {
       searchQuery += ` in ${parameters.time_period}`;
     }
 
+    // Use dynamic filters if present
+    const filter = buildQdrantFilter(
+      parameters.filters as
+        | Record<string, string | number | boolean>
+        | undefined,
+    );
+
     // Get relevant user data
     const queryEmbedding =
       await this.embeddingsService.generateEmbedding(searchQuery);
-    const searchResults = await this.qdrantService.search(
-      'posthog_events',
-      queryEmbedding,
-      10,
-    );
+    const searchResults = await this.qdrantService.search({
+      collection: 'posthog_events',
+      vector: queryEmbedding,
+      top: 10,
+      filter,
+    });
 
     if (!searchResults.result || searchResults.result.length === 0) {
       const result = {
@@ -616,11 +773,11 @@ export class LlmService {
 
     const queryEmbedding =
       await this.embeddingsService.generateEmbedding(searchQuery);
-    const searchResults = await this.qdrantService.search(
-      'posthog_events',
-      queryEmbedding,
-      10,
-    );
+    const searchResults = await this.qdrantService.search({
+      collection: 'posthog_events',
+      vector: queryEmbedding,
+      top: 10,
+    });
 
     if (!searchResults.result || searchResults.result.length === 0) {
       const result = {
@@ -736,13 +893,21 @@ export class LlmService {
       searchQuery += ` who are ${parameters.activity_type}`;
     }
 
+    // Use dynamic filters if present
+    const filter = buildQdrantFilter(
+      parameters.filters as
+        | Record<string, string | number | boolean>
+        | undefined,
+    );
+
     const queryEmbedding =
       await this.embeddingsService.generateEmbedding(searchQuery);
-    const searchResults = await this.qdrantService.search(
-      'posthog_events',
-      queryEmbedding,
-      10,
-    );
+    const searchResults = await this.qdrantService.search({
+      collection: 'posthog_events',
+      vector: queryEmbedding,
+      top: 10,
+      filter,
+    });
 
     if (!searchResults.result || searchResults.result.length === 0) {
       const result = {
@@ -826,6 +991,242 @@ export class LlmService {
     }
   }
 
+  async ingestEvents(
+    parameters: Record<string, any>,
+    stream: boolean = false,
+    res?: Response,
+  ): Promise<RoutedQueryResponse | void> {
+    const startTime = Date.now();
+
+    // Extract batch size from parameters
+    const batchSize = parameters.batch_size as number | undefined;
+    const hasBatchSize =
+      batchSize && typeof batchSize === 'number' && batchSize > 0;
+
+    // If batch size is provided, queue the job
+    if (hasBatchSize) {
+      try {
+        // Use the new strategy: find unique users first
+        await this.queueEventsService.queueFindUniqueUsersJob({ batchSize });
+        this.logger.log(
+          `Queued find unique users job with batch size: ${batchSize}`,
+        );
+      } catch (error) {
+        this.logger.error('Failed to queue find unique users job:', error);
+        // Continue with response generation even if queueing fails
+      }
+    }
+
+    // Prepare prompt for response generation
+    const responsePrompt = INGEST_EVENTS_PROMPT({
+      question: 'Ingest user events',
+      batchSize,
+      hasBatchSize,
+    });
+
+    // Generate LLM response
+    if (stream && res) {
+      // Stream the response
+      await this.generateResponse({
+        prompt: responsePrompt,
+        modelOverride: LLM_MODELS.SUMMARY,
+        stream: true,
+        res,
+      });
+      return;
+    } else {
+      // Get non-streaming response
+      const llmAnswer = await this.generateResponse({
+        prompt: responsePrompt,
+        modelOverride: LLM_MODELS.SUMMARY,
+        stream: false,
+      });
+
+      const result = {
+        question: 'Ingest user events',
+        answer:
+          typeof llmAnswer === 'string'
+            ? llmAnswer
+            : hasBatchSize
+              ? `Event ingestion job has been queued with batch size ${batchSize}. The job will process user events in the background.`
+              : 'Please specify a batch size for event ingestion. Recommended values are 100, 500, or 1000.',
+        intent: 'ingest_events',
+        method_used: 'ingestEvents',
+        sources: [],
+        metadata: {
+          total_sources: 0,
+          search_time_ms: Date.now() - startTime,
+          cached: false,
+          model_used: LLM_MODELS.SUMMARY,
+          confidence: 0.95,
+          batch_size: batchSize,
+          has_batch_size: hasBatchSize,
+        },
+      };
+
+      return result;
+    }
+  }
+
+  async queryUsersWithFilters(
+    parameters: Record<string, any>,
+    stream: boolean = false,
+    res?: Response,
+  ): Promise<RoutedQueryResponse | void> {
+    const startTime = Date.now();
+    // const filterParams = {
+    //   'flattened_data.properties_$app_name': 'Spark Builder Admin',
+    // };
+    const filter = buildQdrantFilter(
+      parameters.filters as Record<string, string | number | boolean>,
+    );
+    const question = (parameters.question as string) || 'user query';
+    const intent = (parameters.intent as string) || 'analytics_query';
+    const queryEmbedding =
+      await this.embeddingsService.generateEmbedding(question);
+    // todo - move query filter to separate function
+    const searchResults = await this.qdrantService.search({
+      collection: 'posthog_events',
+      vector: queryEmbedding,
+      top: 10000,
+      filter,
+      with_payload: false,
+      with_vectors: true,
+    });
+
+    if (!searchResults.result || searchResults.result.length === 0) {
+      const result: RoutedQueryResponse = {
+        question,
+        answer: 'No users found matching the criteria.',
+        intent,
+        method_used: 'queryUsersWithFilters',
+        sources: [],
+        metadata: {
+          total_sources: 0,
+          search_time_ms: Date.now() - startTime,
+          cached: false,
+          model_used: LLM_MODELS.SUMMARY,
+          confidence: 1.0,
+        },
+      };
+      if (stream && res) {
+        res.write(`data: ${JSON.stringify(result)}\n\n`);
+        res.end();
+        return;
+      }
+      return result;
+    }
+
+    // If intent is count_users, return count
+    if (parameters.question_type === 'count') {
+      const uniqueUsers = new Set<string>();
+      searchResults.result.forEach((result) => {
+        uniqueUsers.add(result.id.toString());
+      });
+      const count = uniqueUsers.size;
+      const context = 'User has asked the question: ' + question;
+      const summaryPrompt = COUNT_USERS_SUMMARY_PROMPT({
+        question,
+        context,
+        count,
+      });
+      if (stream && res) {
+        await this.generateResponse({
+          prompt: summaryPrompt,
+          modelOverride: LLM_MODELS.SUMMARY,
+          stream: true,
+          res,
+        });
+        return;
+      } else {
+        const llmAnswer = await this.generateResponse({
+          prompt: summaryPrompt,
+          modelOverride: LLM_MODELS.SUMMARY,
+          stream: false,
+        });
+        const result: RoutedQueryResponse = {
+          question,
+          answer:
+            typeof llmAnswer === 'string'
+              ? llmAnswer
+              : `Found ${count} users matching the criteria.`,
+          intent,
+          method_used: 'queryUsersWithFilters',
+          sources: searchResults.result.slice(0, 3).map((result) => {
+            const payload = result.payload as unknown as QdrantUserPayload;
+            return {
+              person_id: payload.person_id,
+              event_count: payload.event_count,
+              event_types: payload.event_types,
+              time_span: payload.time_span,
+              summary: payload.summary || 'User profile',
+              score: result.score,
+            };
+          }),
+          metadata: {
+            total_sources: searchResults.result.length,
+            search_time_ms: Date.now() - startTime,
+            cached: false,
+            model_used: LLM_MODELS.SUMMARY,
+            confidence: 0.95,
+          },
+        };
+        return result;
+      }
+    }
+
+    // Otherwise, return list/summary
+    const context = this.prepareContext(searchResults.result.slice(0, 3));
+    const summaryPrompt = LIST_USERS_SUMMARY_PROMPT({
+      question,
+      context,
+      count: searchResults.result.length,
+    });
+    if (stream && res) {
+      await this.generateResponse({
+        prompt: summaryPrompt,
+        modelOverride: LLM_MODELS.SUMMARY,
+        stream: true,
+        res,
+      });
+      return;
+    } else {
+      const llmAnswer = await this.generateResponse({
+        prompt: summaryPrompt,
+        modelOverride: LLM_MODELS.SUMMARY,
+        stream: false,
+      });
+      const result: RoutedQueryResponse = {
+        question,
+        answer:
+          typeof llmAnswer === 'string'
+            ? llmAnswer
+            : `Found ${searchResults.result.length} users matching the criteria.`,
+        intent,
+        method_used: 'queryUsersWithFilters',
+        sources: searchResults.result.slice(0, 3).map((result) => {
+          const payload = result.payload as unknown as QdrantUserPayload;
+          return {
+            person_id: payload.person_id,
+            event_count: payload.event_count,
+            event_types: payload.event_types,
+            time_span: payload.time_span,
+            summary: payload.summary || 'User profile',
+            score: result.score,
+          };
+        }),
+        metadata: {
+          total_sources: searchResults.result.length,
+          search_time_ms: Date.now() - startTime,
+          cached: false,
+          model_used: LLM_MODELS.SUMMARY,
+          confidence: 0.95,
+        },
+      };
+      return result;
+    }
+  }
+
   // Main routed query method
   async routedQuery(
     request: RoutedQueryRequest,
@@ -842,49 +1243,28 @@ export class LlmService {
 
     switch (intentResult.intent) {
       case 'count_users':
-        result = await this.countUsers(intentResult.parameters, stream, res);
-        break;
-      case 'find_ios_users':
-        result = await this.findIosUsers(intentResult.parameters, stream, res);
-        break;
       case 'list_users':
-        result = await this.listUsers(intentResult.parameters, stream, res);
-        break;
-      case 'general_query':
-        // Pass question directly to LLM without RAG processing, but with guardrails
-        if (stream && res) {
-          await this.generateResponse({
-            prompt: GENERAL_QUERY_GUARDRAIL_PROMPT(request.question),
-            modelOverride: LLM_MODELS.REASONING,
-            stream: true,
-            res,
-          });
-          return;
-        } else {
-          const llmAnswer = await this.generateResponse({
-            prompt: GENERAL_QUERY_GUARDRAIL_PROMPT(request.question),
-            modelOverride: LLM_MODELS.REASONING,
-            stream: false,
-          });
-          
-          result = {
+      case 'find_ios_users':
+      case 'find_android_users':
+      case 'find_mobile_users':
+      case 'find_desktop_users':
+      case 'find_users_by_location':
+      case 'find_active_users':
+      case 'find_inactive_users':
+      case 'find_cart_abandoners':
+      case 'find_converted_users':
+        result = await this.queryUsersWithFilters(
+          {
+            ...intentResult.parameters,
+            intent: intentResult.intent,
             question: request.question,
-            answer:
-              typeof llmAnswer === 'string'
-                ? llmAnswer
-                : 'I focus on user analytics and data analysis. How can I help you with your user data insights?',
-            intent: 'general_query',
-            method_used: 'direct_llm',
-            sources: [],
-            metadata: {
-              total_sources: 0,
-              search_time_ms: Date.now() - startTime,
-              cached: false,
-              model_used: LLM_MODELS.REASONING,
-              confidence: intentResult.confidence,
-            },
-          };
-        }
+          },
+          stream,
+          res,
+        );
+        break;
+      case 'ingest_events':
+        result = await this.ingestEvents(intentResult.parameters, stream, res);
         break;
       case 'help':
         // Handle help queries by providing information about available methods
@@ -921,6 +1301,53 @@ export class LlmService {
             },
           };
         }
+        break;
+      case 'general_query':
+        // Pass question directly to LLM without RAG processing, but with guardrails
+        if (stream && res) {
+          await this.generateResponse({
+            prompt: GENERAL_QUERY_GUARDRAIL_PROMPT(request.question),
+            modelOverride: LLM_MODELS.REASONING,
+            stream: true,
+            res,
+          });
+          return;
+        } else {
+          const llmAnswer = await this.generateResponse({
+            prompt: GENERAL_QUERY_GUARDRAIL_PROMPT(request.question),
+            modelOverride: LLM_MODELS.REASONING,
+            stream: false,
+          });
+
+          result = {
+            question: request.question,
+            answer:
+              typeof llmAnswer === 'string'
+                ? llmAnswer
+                : 'I focus on user analytics and data analysis. How can I help you with your user data insights?',
+            intent: 'general_query',
+            method_used: 'direct_llm',
+            sources: [],
+            metadata: {
+              total_sources: 0,
+              search_time_ms: Date.now() - startTime,
+              cached: false,
+              model_used: LLM_MODELS.REASONING,
+              confidence: intentResult.confidence,
+            },
+          };
+        }
+        break;
+      case 'query_rag_with_filter':
+        result = await this.queryUsersWithFilters(
+          {
+            ...intentResult.parameters,
+            intent: intentResult.intent,
+            question: request.question,
+          },
+          stream,
+          res,
+        );
         break;
       default:
         // Fallback to general query

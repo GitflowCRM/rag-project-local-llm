@@ -194,54 +194,73 @@ You are an AI assistant helping filter and shortlist user profiles based on meta
 `;
 
 export const INTENT_DETECTION_PROMPT = (question: string) => `
-You are an intent classifier for a user analytics system. Analyze the user's question and determine the intent and required parameters.
+You are an intent classifier for a user analytics system. Analyze the user's question and determine the intent, question type, and required filters.
+Question: ${question}
 
-Available intents and methods:
-1. "count_users" - Count total users or users matching specific criteria
-2. "list_users" - Get a list of users with specific characteristics
-3. "find_ios_users" - Find users using iOS devices
-4. "find_android_users" - Find users using Android devices
-5. "find_mobile_users" - Find users on mobile devices
-6. "find_desktop_users" - Find users on desktop devices
-7. "find_users_by_location" - Find users by country/city
-8. "find_active_users" - Find recently active users
-9. "find_inactive_users" - Find inactive users
-10. "find_cart_abandoners" - Find users who abandoned their cart
-11. "find_converted_users" - Find users who completed purchases
-12. "help" - User explicitly asking about system capabilities, features, or what the system can do
-13. "general_query" - General questions, casual conversation, or non-analytics questions
+Available intents:
+1. "query_rag_with_filter" - Flexible analytics query using RAG and filters. Use this for any question about users, such as:
+   - "How many iOS users?"
+   - "Show me users from Pakistan"
+   - "List users using app version 2.0.0"
+   - "Find users who enabled push notifications"
+   - "How many users are using 2.0.0?"
+   - "List users who abandoned their cart"
+   - etc.
+   
+   When extracting filters for this intent, you can use any of the following keys from person_properties (and similar):
+   - os, app_name, app_build, initial_os, os_version, app_version, device_type, screen_width, app_namespace, screen_height, geoip_latitude, geoip_city_name, geoip_longitude, geoip_time_zone, geoip_postal_code, geoip_country_code, geoip_country_name, geoip_continent_code, geoip_continent_name, geoip_accuracy_radius, geoip_subdivision_1_code, geoip_subdivision_1_name, geoip_subdivision_2_code, geoip_subdivision_2_name, etc.
+   
+   When generating filters, use the format: { "person_properties.key": value }
+   Example: { "person_properties.os": "Android" }, { "person_properties.geoip_city_name": "Sharjah" }, { "person_properties.app_version": "2.0.1" }
+2. "ingest_events" - Ingest or sync user events from data source. Use this for any request to ingest, sync, or queue user events, regardless of the number of users. Examples:
+   - "Ingest 1 user"
+   - "Sync 10 users"
+   - "Start ingestion for 5 users"
+   - "Trigger event ingestion"
+   - "Queue ingestion for a single user"
+   - "Ingest events for user 123"
+   - "Ingest or sync user events from data source"
+3. "help" - User explicitly asking about system capabilities, features, or what the system can do
+4. "general_query" - General questions, casual conversation, or non-analytics questions
 
-Question: "${question}"
+For "query_rag_with_filter":
+- Extract all relevant filters and include them in the filters object.
+- Supported filter keys include any field in person_properties, such as:
+  - os, app_name, app_build, initial_os, os_version, app_version, device_type, screen_width, app_namespace, screen_height, geoip_latitude, geoip_city_name, geoip_longitude, geoip_time_zone, geoip_postal_code, geoip_country_code, geoip_country_name, geoip_continent_code, geoip_continent_name, geoip_accuracy_radius, geoip_subdivision_1_code, geoip_subdivision_1_name, geoip_subdivision_2_code, geoip_subdivision_2_name, etc.
+- When generating filters, use the format: { "person_properties.key": value }
+- Example: { "person_properties.os": "Android" }, { "person_properties.geoip_city_name": "Sharjah" }, { "person_properties.app_version": "2.0.1" }
+- Set "question_type" to "count" if the user asks "How many..." or similar.
+- Set "question_type" to "list" if the user asks "Show/List/Find..." or similar.
+- If the question is ambiguous, default to "list".
 
-IMPORTANT: Be very careful about classifying "help" intent. Only classify as "help" if the user is explicitly asking about:
-- System capabilities ("What can you do?", "What are your features?")
-- Available methods ("What methods do you have?", "Show me your capabilities")
-- How to use the system ("How do I use this?", "What can I ask you?")
-- System functionality ("What are your functions?", "Tell me about your features")
+For "ingest_events":
+- Use this for any request to ingest, sync, or queue user events, regardless of the number of users (e.g., "ingest 1 user", "sync 10 users", "trigger event ingestion").
+- If the user specifies a number of users (e.g., "ingest 5 users", "sync 10 users"), extract it as "batch_size" in the parameters object.
 
-DO NOT classify as "help" for:
-- Simple greetings ("Hi", "Hello", "Hey")
-- Casual conversation ("How are you?", "What's up?")
-- General questions ("What's the weather?", "Tell me a joke")
-- Non-system related questions
+Example output for "sync 10 users":
+{
+  "intent": "ingest_events",
+  "confidence": 0.98,
+  "parameters": {
+    "batch_size": 10
+  },
+  "method": "ingestEvents"
+}
 
-Extract parameters like:
-- device_type: "ios", "android", "mobile", "desktop"
-- location: country or city name
-- time_period: "last_24h", "last_7d", "last_30d", "all_time"
-- activity_type: "active", "inactive", "cart_abandoned", "converted"
-
-IMPORTANT: Return ONLY the JSON object below. Do NOT include markdown formatting, code blocks, or any other text.
+Return ONLY the JSON object below. Do NOT include markdown formatting, code blocks, or any other text.
 
 {
-  "intent": "intent_name",
-  "confidence": 0.95,
+  "intent": "query_rag_with_filter",
+  "confidence": 0.98,
   "parameters": {
-    "device_type": "ios",
-    "location": "UAE",
-    "time_period": "last_7d"
+    "question_type": "count", // or "list"
+    "filters": {
+      "person_properties.os": "Android",
+      "person_properties.geoip_city_name": "Sharjah",
+      "person_properties.app_version": "2.0.1"
+    }
   },
-  "method": "method_name"
+  "method": "queryUsersWithFilters"
 }`;
 
 export const HELP_RESPONSE_PROMPT = () => `
@@ -412,3 +431,43 @@ Please provide a natural, conversational answer that:
 5. Avoids listing individual user IDs unless specifically requested
 
 Answer:`;
+
+export const INGEST_EVENTS_PROMPT = ({
+  question,
+  batchSize,
+  hasBatchSize,
+}: {
+  question: string;
+  batchSize?: number;
+  hasBatchSize: boolean;
+}) => `
+You are a user analytics system assistant handling event ingestion requests.
+
+User Request: "${question}"
+
+Analysis:
+- Batch size provided: ${hasBatchSize ? 'Yes' : 'No'}
+- Batch size value: ${batchSize || 'Not specified'}
+
+${
+  hasBatchSize
+    ? `The user has provided a batch size of ${batchSize}. This will find ${batchSize} unique users with uningested events and process each user individually.`
+    : `The user wants to ingest events but hasn't specified a batch size. This is required for proper processing.`
+}
+
+Please provide a response that:
+
+${
+  hasBatchSize
+    ? `1. Confirms the find unique users job has been queued with batch size ${batchSize}
+2. Explains that the system will find ${batchSize} unique users and process each one individually
+3. Mentions that individual user processing jobs will be queued automatically
+4. Provides a professional, confident tone
+5. Mentions that the job is being processed in the background`
+    : `1. Politely explains that a batch size is required
+2. Suggests appropriate batch sizes (e.g., 10, 50, 100)
+3. Explains why batch size is important for user processing
+4. Provides a helpful, guiding tone`
+}
+
+Response:`;

@@ -2,9 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThanOrEqual } from 'typeorm';
 import { PosthogEvent } from './entities/posthog-event.entity';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class PosthogEventsService {
+  private readonly logger = new Logger(PosthogEventsService.name);
   constructor(
     @InjectRepository(PosthogEvent)
     private readonly posthogEventRepository: Repository<PosthogEvent>,
@@ -341,11 +343,11 @@ export class PosthogEventsService {
         .createQueryBuilder('event')
         .where('event.ingested_at IS NULL')
         .andWhere('event.person_id = :person_id', { person_id })
-        .orderBy('event.timestamp', 'ASC')
+        .orderBy('event.created_at', 'ASC')
         // for last 7 days
-        .andWhere('event.created_at >= :date', {
-          date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-        })
+        // .andWhere('event.created_at >= :date', {
+        //   date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        // })
         .limit(30)
         .getMany()
     );
@@ -522,5 +524,48 @@ export class PosthogEventsService {
       ingestedEvents,
       uningestedEvents,
     };
+  }
+
+  // Find unique users with uningested events (simple approach)
+  async findUniqueUsersWithUningestedEvents(
+    userLimit: number,
+  ): Promise<string[]> {
+    const distinctUsers = await this.posthogEventRepository
+      .createQueryBuilder('event')
+      .select('DISTINCT event.person_id')
+      .where('event.ingested_at IS NULL')
+      .andWhere('event.person_id IS NOT NULL')
+      .orderBy('event.person_id', 'ASC')
+      .limit(userLimit)
+      .getRawMany();
+
+    return distinctUsers
+      .map((user: { person_id: string }) => user.person_id)
+      .filter(
+        (personId): personId is string =>
+          personId !== null && personId !== undefined,
+      );
+  }
+
+  // Mark all uningested events for a user as ingested
+  async markAllUserEventsAsIngested(person_id: string): Promise<void> {
+    try {
+      await this.posthogEventRepository
+        .createQueryBuilder()
+        .update()
+        .set({ ingested_at: new Date() })
+        .where('person_id = :person_id', { person_id })
+        .andWhere('ingested_at IS NULL')
+        .execute();
+
+      this.logger.log(
+        `Marked all uningested events for user ${person_id} as ingested`,
+      );
+    } catch (error) {
+      this.logger.log(
+        `Error marking all uningested events for user ${person_id} as ingested`,
+      );
+      this.logger.log(error);
+    }
   }
 }

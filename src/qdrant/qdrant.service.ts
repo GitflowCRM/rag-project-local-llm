@@ -269,22 +269,36 @@ export class QdrantService implements OnModuleInit {
     }
   }
 
-  async search(
-    collection: string,
-    vector: number[],
+  async search({
+    collection,
+    vector,
     top = 5,
-  ): Promise<QdrantSearchResult> {
+    filter,
+    with_payload = false,
+    with_vectors = false,
+  }: {
+    collection: string;
+    vector: number[];
+    top?: number;
+    filter?: any;
+    with_payload?: boolean;
+    with_vectors?: boolean;
+  }): Promise<QdrantSearchResult> {
     const url = `${this.baseUrl}/collections/${collection}/points/search`;
-    const body = {
+    const body: Record<string, unknown> = {
       vector,
       limit: top,
-      with_payload: true,
-      with_vectors: false,
+      with_payload,
+      with_vectors,
     };
+    if (filter) {
+      body.filter = filter;
+    }
 
     try {
       this.logger.debug(
-        `Searching collection ${collection} with vector of length ${vector.length}`,
+        `Searching collection ${collection} with vector of length ${vector.length}` +
+          (filter ? ` and filter: ${JSON.stringify(filter)}` : ''),
       );
       const response = await firstValueFrom(
         this.httpService.post<QdrantSearchResult>(url, body).pipe(
@@ -303,6 +317,8 @@ export class QdrantService implements OnModuleInit {
       this.logger.error(
         `Failed to search: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
+      const generatedCurl = `curl -X POST ${url} -H "Content-Type: application/json" -d '${JSON.stringify(body)}'`;
+      this.logger.debug(`Generated curl: ${generatedCurl}`);
       throw error;
     }
   }
@@ -323,7 +339,13 @@ export class QdrantService implements OnModuleInit {
       const embedding = await this.embeddingsService.generateEmbedding(query);
       this.logger.debug(`Generated embedding for query: "${query}"`);
 
-      const results = await this.search(collection, embedding, top);
+      const results = await this.search({
+        collection,
+        vector: embedding,
+        top,
+        with_payload: true,
+        with_vectors: false,
+      });
       this.logger.debug(`Raw search results: ${JSON.stringify(results)}`);
 
       const formattedResults = {

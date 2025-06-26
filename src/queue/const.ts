@@ -15,6 +15,7 @@ export const QUEUE_PROCESSORS = {
   POSTHOG_EVENTS: {
     SYNC_POSTHOG_EVENTS: 'posthog-events.sync.posthog-events',
     FIND_USERS: 'posthog-events.find.users',
+    FIND_UNIQUE_USERS: 'posthog-events.find.unique.users',
     PROCESS_USER: 'posthog-events.process.user',
   },
   // String key aliases for dynamic access
@@ -27,6 +28,7 @@ export const QUEUE_PROCESSORS = {
   [QUEUE_NAMES.POSTHOG_EVENTS]: {
     SYNC_POSTHOG_EVENTS: 'posthog-events.sync.posthog-events',
     FIND_USERS: 'posthog-events.find.users',
+    FIND_UNIQUE_USERS: 'posthog-events.find.unique.users',
     PROCESS_USER: 'posthog-events.process.user',
   },
 };

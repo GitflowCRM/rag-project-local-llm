@@ -85,10 +85,10 @@ export class QdrantController {
   @ApiBody({ type: SearchDto })
   @ApiResponse({ status: 200, description: 'Search results' })
   async search(@Body() body: SearchDto): Promise<QdrantSearchResult> {
-    return await this.qdrantService.search(
-      body.collection,
-      body.vector,
-      body.top,
-    );
+    return await this.qdrantService.search({
+      collection: body.collection,
+      vector: body.vector,
+      top: body.top,
+    });
   }
 }

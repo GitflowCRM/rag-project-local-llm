@@ -21,6 +21,15 @@ interface ProcessUserJobData {
   person_properties: Record<string, any>;
 }
 
+function stripDollarFromKeys(obj: Record<string, any>): Record<string, any> {
+  return Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [
+      k.startsWith('$') ? k.slice(1) : k,
+      v,
+    ]),
+  );
+}
+
 @Processor(QUEUE_NAMES.POSTHOG_EVENTS, { concurrency: 1 })
 export class PosthogEventsProcessor extends WorkerHost {
   private readonly logger = new Logger(PosthogEventsProcessor.name);
@@ -56,6 +65,12 @@ export class PosthogEventsProcessor extends WorkerHost {
       switch (job.name) {
         case QUEUE_PROCESSORS.POSTHOG_EVENTS.FIND_USERS:
           await this.handleFindUsers(job.data as FindUsersJobData, attemptId);
+          break;
+        case QUEUE_PROCESSORS.POSTHOG_EVENTS.FIND_UNIQUE_USERS:
+          await this.handleFindUniqueUsers(
+            job.data as FindUsersJobData,
+            attemptId,
+          );
           break;
         case QUEUE_PROCESSORS.POSTHOG_EVENTS.PROCESS_USER:
           await this.handleProcessUserEvents(
@@ -202,12 +217,63 @@ export class PosthogEventsProcessor extends WorkerHost {
     });
   }
 
+  private async handleFindUniqueUsers(
+    data: FindUsersJobData,
+    attemptId: string,
+  ) {
+    const { batchSize } = data;
+    this.logger.debug(
+      `[PosthogEventsProcessor] Finding unique users with uningested events (batch size: ${batchSize})`,
+    );
+
+    await this.ingestionAttemptsService.markAsProcessing(attemptId);
+
+    // Get unique users with uningested events
+    const uniqueUsers =
+      await this.posthogEventsService.findUniqueUsersWithUningestedEvents(
+        batchSize,
+      );
+
+    this.logger.log(
+      `[PosthogEventsProcessor] Found ${uniqueUsers.length} unique users with uningested events`,
+    );
+
+    // For each user, queue a job to process their events
+    for (const person_id of uniqueUsers) {
+      this.logger.debug(
+        `[PosthogEventsProcessor] Queuing PROCESS_USER job for user ${person_id}`,
+      );
+
+      // Queue a PROCESS_USER job for this specific user
+      await this.posthogEventsQueue.add(
+        QUEUE_PROCESSORS.POSTHOG_EVENTS.PROCESS_USER,
+        { person_id },
+        {
+          // Optional: Add some delay to avoid overwhelming the system
+          delay: 1000, // 1 second delay between jobs
+        },
+      );
+
+      this.logger.log(
+        `[PosthogEventsProcessor] Queued PROCESS_USER job for user ${person_id}`,
+      );
+    }
+
+    await this.ingestionAttemptsService.markAsSuccess(attemptId, {
+      events_processed: uniqueUsers.length,
+      metadata: {
+        batch_size: batchSize,
+        users_found: uniqueUsers.length,
+      },
+    });
+  }
+
   private async handleProcessUserEvents(
     data: ProcessUserJobData,
     attemptId: string,
     startTime: number,
   ) {
-    const { person_id, person_properties } = data;
+    const { person_id } = data;
     this.logger.debug(
       `[PosthogEventsProcessor] Processing events for user ${person_id}`,
     );
@@ -234,6 +300,7 @@ export class PosthogEventsProcessor extends WorkerHost {
     );
 
     try {
+      const person_properties = events[0].person_properties;
       // Create a summary of all events for this user
       const summary = await this.createLlmUserSummary(
         person_id,
@@ -268,7 +335,7 @@ export class PosthogEventsProcessor extends WorkerHost {
           last_event: events[events.length - 1]?.timestamp?.toISOString(),
           // Store flattened data for better similarity search
           flattened_data: this.getFlattenedMetadata(events),
-          person_properties: person_properties,
+          person_properties: stripDollarFromKeys(person_properties),
           // Store individual events for detailed analysis
           events: events.map((e) => ({
             event: e.event,
@@ -312,6 +379,9 @@ export class PosthogEventsProcessor extends WorkerHost {
           user_id: person_id,
         },
       });
+
+      // Mark all uningested events for this user as ingested
+      await this.posthogEventsService.markAllUserEventsAsIngested(person_id);
     } catch (error) {
       // If we fail after marking some events as ingested, mark as partial
       const processedEvents = events.filter(
