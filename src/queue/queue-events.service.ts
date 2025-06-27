@@ -9,6 +9,8 @@ export class QueueEventsService {
     @InjectQueue(QUEUE_NAMES.EVENT_SYNC) private readonly eventSyncQueue: Queue,
     @InjectQueue(QUEUE_NAMES.POSTHOG_EVENTS)
     private readonly posthogEventsQueue: Queue,
+    @InjectQueue(QUEUE_NAMES.UI_BLOCKS_EMBEDDING)
+    private readonly uiBlocksEmbeddingQueue: Queue,
   ) {}
 
   async queueSyncJob({
@@ -68,5 +70,23 @@ export class QueueEventsService {
       { batchSize },
     );
     return { status: 'queued', batchSize };
+  }
+
+  async queueUiBlocksEmbeddingJob({
+    filter,
+    batchSize,
+  }: {
+    filter?: Record<string, unknown>;
+    batchSize?: number;
+  }): Promise<{
+    status: string;
+    filter?: Record<string, unknown>;
+    batchSize?: number;
+  }> {
+    await this.uiBlocksEmbeddingQueue.add(
+      QUEUE_PROCESSORS.UI_BLOCKS_EMBEDDING.PROCESS_BLOCKS,
+      { filter, batchSize },
+    );
+    return { status: 'queued', filter, batchSize };
   }
 }

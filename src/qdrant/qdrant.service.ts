@@ -67,6 +67,7 @@ export class QdrantService implements OnModuleInit {
   private readonly eventCollection = 'events';
   private readonly posthogEventsCollection = 'posthog_events';
   private readonly queryCacheCollection = 'query_cache';
+  private readonly cmsCollection = 'cms';
 
   constructor(
     private readonly httpService: HttpService,
@@ -83,6 +84,7 @@ export class QdrantService implements OnModuleInit {
       await this.ensureCollectionExists(this.eventCollection);
       await this.ensureCollectionExists(this.posthogEventsCollection);
       await this.ensureCollectionExists(this.queryCacheCollection);
+      await this.ensureCollectionExists(this.cmsCollection);
       this.logger.log('Qdrant service initialized successfully');
     } catch (error) {
       this.logger.error(

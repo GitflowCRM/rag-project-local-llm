@@ -319,9 +319,11 @@ export class LlmService {
         throw new Error('Prompt length is too long');
       }
 
+      const completionUrl = `${this.apiUrl}/chat/completions`;
+
       if (stream) {
         // Use fetch for streaming
-        const fetchResponse = await fetch(`${this.apiUrl}/chat/completions`, {
+        const fetchResponse = await fetch(completionUrl, {
           method: 'POST',
           headers,
           body: JSON.stringify({
@@ -360,7 +362,7 @@ export class LlmService {
       } else {
         // Non-streaming: use axios
         const response = await axios.post<LLMResponse>(
-          `${this.apiUrl}/chat/completions`,
+          completionUrl,
           {
             model: modelToUse,
             temperature: Number(this.temperature),
@@ -1090,7 +1092,7 @@ export class LlmService {
       vector: queryEmbedding,
       top: 10000,
       filter,
-      with_payload: false,
+      with_payload: true,
       with_vectors: true,
     });
 
@@ -1391,5 +1393,9 @@ export class LlmService {
     }
 
     return result;
+  }
+
+  public async getEmbedding(text: string): Promise<number[]> {
+    return this.embeddingsService.generateEmbedding(text);
   }
 }

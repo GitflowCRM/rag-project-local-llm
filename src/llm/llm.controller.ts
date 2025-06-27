@@ -5,7 +5,6 @@ import { QdrantService } from '../qdrant/qdrant.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { randomUUID } from 'crypto';
-import { LLM_MODELS } from '../queue/const';
 
 interface QueryRequest {
   question: string;
@@ -213,34 +212,6 @@ export class LlmController {
     }
 
     return null;
-  }
-
-  private async improveCachedResponse(
-    question: string,
-    cachedAnswer: string,
-    res: Response,
-  ): Promise<void> {
-    const prompt = `You are an expert at improving and refining answers. The user asked: "${question}"
-
-Here is a cached answer that was previously generated:
-"${cachedAnswer}"
-
-Please improve this answer by:
-1. Making it more concise and direct
-2. Ensuring it directly addresses the user's question
-3. Improving clarity and readability
-4. Adding any relevant insights or context that might be missing
-5. Maintaining accuracy while making it more engaging
-
-Provide an improved version of the answer:`;
-
-    await this.llmService.generateResponse({
-      prompt,
-      modelOverride: LLM_MODELS.SUMMARY,
-      stream: true,
-      res,
-    });
-    // No return value needed, streaming handled by service
   }
 
   private async cacheQueryResult(

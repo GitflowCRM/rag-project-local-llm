@@ -10,6 +10,8 @@ import { DataSource } from 'typeorm';
 import { WithLengthColumnType } from 'typeorm/driver/types/ColumnTypes';
 import { QdrantModule } from './qdrant/qdrant.module';
 import { QueueModule } from './queue/queue.module';
+import { CMSService } from './cms.service';
+import { UiGenerationModule } from './ui-generation/ui-generation.module';
 
 @Global()
 @Module({
@@ -52,8 +54,9 @@ import { QueueModule } from './queue/queue.module';
     EmbeddingsModule,
     LlmModule,
     QdrantModule,
+    UiGenerationModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, CMSService],
 })
 export class AppModule {}

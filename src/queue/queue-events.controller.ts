@@ -1,6 +1,6 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiProperty } from '@nestjs/swagger';
-import { IsNumber, IsOptional, Min, Max } from 'class-validator';
+import { IsNumber, IsOptional, Min, Max, IsObject } from 'class-validator';
 import { QueueEventsService } from './queue-events.service';
 
 class QueueJobDto {
@@ -19,6 +19,31 @@ class QueueJobDto {
   batchSize?: number;
 }
 
+export class UiBlocksEmbeddingJobDto {
+  @ApiProperty({
+    description: 'Number of items to process in each batch',
+    example: 100,
+    minimum: 1,
+    maximum: 1000,
+    required: false,
+    default: 100,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(1000)
+  batchSize?: number;
+
+  @ApiProperty({
+    description: 'Filter to apply when fetching UI blocks',
+    example: { status: 'active' },
+    required: false,
+  })
+  @IsOptional()
+  @IsObject()
+  filter?: Record<string, unknown>;
+}
+
 class QueueJobResponseDto {
   @ApiProperty({
     description: 'Status of the queued job',
@@ -31,6 +56,26 @@ class QueueJobResponseDto {
     example: 100,
   })
   batchSize: number;
+}
+
+export class UiBlocksEmbeddingJobResponseDto {
+  @ApiProperty({
+    description: 'Status of the queued job',
+    example: 'queued',
+  })
+  status: string;
+
+  @ApiProperty({
+    description: 'Batch size used for the job',
+    example: 100,
+  })
+  batchSize?: number;
+
+  @ApiProperty({
+    description: 'Filter applied to the job',
+    example: { status: 'active' },
+  })
+  filter?: Record<string, unknown>;
 }
 
 @ApiTags('Queue Events')

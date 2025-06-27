@@ -2,6 +2,7 @@ export const QUEUE_NAMES = {
   EVENT_SYNC: 'event-sync',
   EMBEDDINGS: 'embeddings',
   POSTHOG_EVENTS: 'posthog-events',
+  UI_BLOCKS_EMBEDDING: 'ui-blocks-embedding',
 };
 
 export const QUEUE_PROCESSORS = {
@@ -18,6 +19,9 @@ export const QUEUE_PROCESSORS = {
     FIND_UNIQUE_USERS: 'posthog-events.find.unique.users',
     PROCESS_USER: 'posthog-events.process.user',
   },
+  UI_BLOCKS_EMBEDDING: {
+    PROCESS_BLOCKS: 'ui-blocks-embedding.process.blocks',
+  },
   // String key aliases for dynamic access
   [QUEUE_NAMES.EVENT_SYNC]: {
     SYNC_EVENTS: 'event-sync.sync.events',
@@ -30,6 +34,9 @@ export const QUEUE_PROCESSORS = {
     FIND_USERS: 'posthog-events.find.users',
     FIND_UNIQUE_USERS: 'posthog-events.find.unique.users',
     PROCESS_USER: 'posthog-events.process.user',
+  },
+  [QUEUE_NAMES.UI_BLOCKS_EMBEDDING]: {
+    PROCESS_BLOCKS: 'ui-blocks-embedding.process.blocks',
   },
 };
 

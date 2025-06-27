@@ -471,3 +471,36 @@ ${
 }
 
 Response:`;
+
+export const UI_BLOCK_SUMMARY_PROMPT = ({
+  description,
+  initialConfig,
+}: {
+  description: string;
+  initialConfig: any;
+}) => `
+You are an expert UI/UX analyst. Given the following UI block definition, generate:
+- A concise summary (1-2 sentences)
+- Tags for business types (e.g., fashion, restaurant, real estate)
+- Use cases (e.g., homepage, product page, sale landing)
+- Content type (product, banner, collection, etc.)
+- Layout type (grid, slider, hero, etc.)
+- Flags: dynamic, supports navigation, needs configuration
+
+Block Description: ${description}
+Initial Config: ${JSON.stringify(initialConfig)}
+
+Return only a JSON object with:
+{
+  "summary": "...",
+  "tags": [],
+  "use_cases": [],
+  "content_type": "",
+  "layout_type": "",
+  "flags": {
+    "dynamic": true,
+    "supports_navigation": false,
+    "needs_configuration": false
+  }
+}
+`;
